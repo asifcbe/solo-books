@@ -3,17 +3,14 @@ import {
   Box, Typography, Grid, Card, CardContent, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, Paper, Chip
 } from '@mui/material';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useBusiness } from './BusinessContext';
+import { useData } from './DataContext';
 
 const ReportsPage = () => {
   const { currentBusiness } = useBusiness();
+  const { getItems } = useData();
   
-  const transactions = useLiveQuery(
-    () => db.transactions.where('businessId').equals(currentBusiness?.id || 0).toArray(),
-    [currentBusiness]
-  ) || [];
+  const transactions = getItems('transactions', { businessId: currentBusiness?.id || 0 });
 
   const gstSummary = useMemo(() => {
     const summary = {};

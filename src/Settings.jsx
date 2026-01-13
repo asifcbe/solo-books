@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Card, CardContent, TextField, Button, Grid, 
-  Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar
+  Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar,
+  FormControl, InputLabel, Select, MenuItem, Chip
 } from '@mui/material';
 import { Save, Plus, Trash2, Building2, Check } from 'lucide-react';
-import { db } from './db';
 import { useBusiness } from './BusinessContext';
+import { useThemeContext } from './ThemeContext';
+import { useConfig } from './ConfigContext';
+import { useData } from './DataContext';
 
 const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
+  const { mode, primaryColor, updateTheme } = useThemeContext();
+  const { config, reloadConfig } = useConfig();
+  const { addItem, updateItem, deleteItem, getItems } = useData();
   const [formData, setFormData] = useState({
-    name: '', gstNumber: '', address: '', phone: '', email: '', state: ''
+    name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
+    username: '', password: '', confirmPassword: ''
   });
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [isNew, setIsNew] = useState(false);
@@ -24,21 +31,54 @@ const SettingsPage = () => {
         address: currentBusiness.address || '',
         phone: currentBusiness.phone || '',
         email: currentBusiness.email || '',
-        state: currentBusiness.state || ''
+        state: currentBusiness.state || '',
+        username: currentBusiness.username || '',
+        password: '',
+        confirmPassword: ''
       });
     }
   }, [currentBusiness, isNew]);
 
   const handleSaveListUpdate = async (e) => {
     e.preventDefault();
+    
+    if (isNew) {
+      if (formData.password !== formData.confirmPassword) {
+        setMsg({ type: 'error', text: 'Passwords do not match!' });
+        return;
+      }
+      if (!formData.username || !formData.password) {
+        setMsg({ type: 'error', text: 'Username and password are required!' });
+        return;
+      }
+    }
+    
     try {
       if (isNew) {
-        const id = await db.businesses.add(formData);
+        const businessData = {
+          name: formData.name,
+          gstNumber: formData.gstNumber,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
+          state: formData.state,
+          username: formData.username,
+          password: formData.password
+        };
+        const id = await addItem('businesses', businessData);
         setCurrentBusinessId(id);
         setIsNew(false);
         setMsg({ type: 'success', text: 'New business created successfully!' });
       } else if (currentBusiness?.id) {
-        await db.businesses.update(currentBusiness.id, formData);
+        const updateData = {
+          name: formData.name,
+          gstNumber: formData.gstNumber,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
+          state: formData.state
+        };
+        updateItem('businesses', currentBusiness.id, updateData);
         setMsg({ type: 'success', text: 'Business profile updated successfully!' });
       }
     } catch (err) {
@@ -65,12 +105,17 @@ const SettingsPage = () => {
       try {
         const otherBusiness = businesses.find(b => b.id !== id);
         
-        await db.transaction('rw', [db.businesses, db.parties, db.items, db.transactions], async () => {
-          await db.parties.where('businessId').equals(id).delete();
-          await db.items.where('businessId').equals(id).delete();
-          await db.transactions.where('businessId').equals(id).delete();
-          await db.businesses.delete(id);
-        });
+        // Delete all related data
+        const parties = getItems('parties', { businessId: id });
+        const items = getItems('items', { businessId: id });
+        const transactions = getItems('transactions', { businessId: id });
+        const opticals = getItems('opticals', { businessId: id });
+        
+        parties.forEach(party => deleteItem('parties', party.id));
+        items.forEach(item => deleteItem('items', item.id));
+        transactions.forEach(tx => deleteItem('transactions', tx.id));
+        opticals.forEach(opt => deleteItem('opticals', opt.id));
+        deleteItem('businesses', id);
 
         if (id === currentBusiness?.id && otherBusiness) {
           switchBusiness(otherBusiness.id);
@@ -87,7 +132,10 @@ const SettingsPage = () => {
 
   return (
     <Box sx={{ maxWidth: 900, mx: 'auto', pb: 8 }}>
-      <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>Settings</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800 }}>Settings</Typography>
+        <Button variant="outlined" onClick={reloadConfig}>Reload Config</Button>
+      </Box>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>Manage your business profiles and application preferences.</Typography>
 
       {msg.text && (
@@ -148,6 +196,44 @@ const SettingsPage = () => {
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     />
                   </Grid>
+                  {isNew && (
+                    <>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Username"
+                          placeholder="Choose a username"
+                          value={formData.username}
+                          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          required
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Password"
+                          type="password"
+                          placeholder="Choose a password"
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                          required
+                        />
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Confirm Password"
+                          type="password"
+                          placeholder="Confirm your password"
+                          value={formData.confirmPassword}
+                          onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                          required
+                          error={formData.password !== formData.confirmPassword && formData.confirmPassword !== ''}
+                          helperText={formData.password !== formData.confirmPassword && formData.confirmPassword !== '' ? 'Passwords do not match' : ''}
+                        />
+                      </Grid>
+                    </>
+                  )}
                   <Grid item xs={12} sx={{ mt: 1, display: 'flex', gap: 1 }}>
                     {isNew && (
                       <Button 
@@ -236,6 +322,56 @@ const SettingsPage = () => {
           </Card>
         </Grid>
       </Grid>
+
+      <Box sx={{ mt: 6 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Appearance</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>Customize the look and feel of your application.</Typography>
+
+        <Grid container spacing={4}>
+          <Grid item xs={12} md={6}>
+            <Card elevation={0}>
+              <CardContent sx={{ p: 4 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Theme Mode</Typography>
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                  <InputLabel>Mode</InputLabel>
+                  <Select
+                    value={mode}
+                    label="Mode"
+                    onChange={(e) => updateTheme(e.target.value, primaryColor)}
+                  >
+                    <MenuItem value="light">Light</MenuItem>
+                    <MenuItem value="dark">Dark</MenuItem>
+                  </Select>
+                </FormControl>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Primary Color</Typography>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  {[
+                    { value: 'indigo', label: 'Indigo', color: '#4f46e5' },
+                    { value: 'blue', label: 'Blue', color: '#2563eb' },
+                    { value: 'green', label: 'Green', color: '#059669' },
+                    { value: 'purple', label: 'Purple', color: '#7c3aed' },
+                  ].map((colorOption) => (
+                    <Chip
+                      key={colorOption.value}
+                      label={colorOption.label}
+                      onClick={() => updateTheme(mode, colorOption.value)}
+                      sx={{
+                        bgcolor: primaryColor === colorOption.value ? colorOption.color : 'transparent',
+                        color: primaryColor === colorOption.value ? 'white' : 'text.primary',
+                        border: `2px solid ${colorOption.color}`,
+                        '&:hover': {
+                          bgcolor: colorOption.color,
+                          color: 'white',
+                        },
+                      }}
+                    />
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Box>
     </Box>
   );
 };

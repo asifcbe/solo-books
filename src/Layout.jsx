@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   Box, Drawer, AppBar, Toolbar, List, Typography, Divider, IconButton, 
   ListItem, ListItemButton, ListItemIcon, ListItemText, Avatar, Menu, MenuItem, 
-  Tooltip, useTheme, useMediaQuery
+  Tooltip, useTheme, useMediaQuery, Button, Dialog, DialogTitle, DialogContent, 
+  DialogActions, TextField, Alert
 } from '@mui/material';
 import { 
   Menu as MenuIcon, 
@@ -18,10 +19,14 @@ import {
   Store,
   Plus,
   Download,
-  Upload
+  Upload,
+  DollarSign,
+  Eye
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBusiness } from './BusinessContext';
+import { useAuth } from './AuthContext';
+import { useConfig } from './ConfigContext';
 
 const drawerWidth = 260;
 
@@ -30,25 +35,29 @@ const Layout = ({ children }) => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [open, setOpen] = useState(!isMobile);
   const [anchorEl, setAnchorEl] = useState(null);
+  const [passwordDialog, setPasswordDialog] = useState({ open: false, business: null, password: '', error: '' });
   const navigate = useNavigate();
   const location = useLocation();
   const { currentBusiness, businesses, switchBusiness } = useBusiness();
+  const { logout, currentUser } = useAuth();
+  const { config } = useConfig();
 
   const handleDrawerToggle = () => setOpen(!open);
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
 
   const menuItems = [
-    { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' },
-    { text: 'Parties', icon: <Users size={20} />, path: '/parties' },
-    { text: 'Items', icon: <Package size={20} />, path: '/items' },
-    { text: 'Sales', icon: <ReceiptText size={20} />, path: '/sales' },
-    { text: 'Purchases', icon: <ShoppingBag size={20} />, path: '/purchases' },
-    { text: 'Payments', icon: <Download size={20} />, path: '/payment-in' },
-    { text: 'Reports', icon: <FileText size={20} />, path: '/reports' },
-    { text: 'Backup/Restore', icon: <Database size={20} />, path: '/backup' },
-    { text: 'Settings', icon: <Settings size={20} />, path: '/settings' },
-  // { text: 'Payment Out', icon: <Upload size={20} />, path: '/payment-out' },
+    ...(config.features?.dashboard ? [{ text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' }] : []),
+    ...(config.features?.parties ? [{ text: 'Parties', icon: <Users size={20} />, path: '/parties' }] : []),
+    ...(config.features?.items ? [{ text: 'Items', icon: <Package size={20} />, path: '/items' }] : []),
+    ...(config.features?.sales ? [{ text: 'Sales', icon: <ReceiptText size={20} />, path: '/sales' }] : []),
+    ...(config.features?.purchases ? [{ text: 'Purchases', icon: <ShoppingBag size={20} />, path: '/purchases' }] : []),
+    ...(config.features?.expenses ? [{ text: 'Expenses', icon: <DollarSign size={20} />, path: '/expenses' }] : []),
+    ...(config.features?.opticals && config.businessType === 'opticals' ? [{ text: 'Opticals', icon: <Eye size={20} />, path: '/opticals' }] : []),
+    ...(config.features?.payments ? [{ text: 'Payments', icon: <Download size={20} />, path: '/payment-in' }] : []),
+    ...(config.features?.reports ? [{ text: 'Reports', icon: <FileText size={20} />, path: '/reports' }] : []),
+    ...(config.features?.backup ? [{ text: 'Backup/Restore', icon: <Database size={20} />, path: '/backup' }] : []),
+    ...(config.features?.settings ? [{ text: 'Settings', icon: <Settings size={20} />, path: '/settings' }] : []),
   ];
 
   const drawer = (
@@ -112,7 +121,14 @@ const Layout = ({ children }) => {
         transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         {businesses.map((biz) => (
-          <MenuItem key={biz.id} onClick={() => { switchBusiness(biz.id); handleMenuClose(); }}>
+          <MenuItem key={biz.id} onClick={() => { 
+            if (biz.id === currentBusiness?.id) {
+              handleMenuClose();
+              return;
+            }
+            setPasswordDialog({ open: true, business: biz, password: '', error: '' }); 
+            handleMenuClose(); 
+          }}>
             {biz.name}
           </MenuItem>
         ))}
@@ -125,14 +141,27 @@ const Layout = ({ children }) => {
     </Box>
   );
 
+  const handlePasswordSubmit = () => {
+    if (passwordDialog.business && passwordDialog.business.password === passwordDialog.password) {
+      switchBusiness(passwordDialog.business.id);
+      setPasswordDialog({ open: false, business: null, password: '', error: '' });
+    } else {
+      setPasswordDialog({ ...passwordDialog, error: 'Incorrect password' });
+    }
+  };
+
+  const handlePasswordClose = () => {
+    setPasswordDialog({ open: false, business: null, password: '', error: '' });
+  };
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar 
         position="fixed" 
         sx={{ 
           zIndex: (theme) => theme.zIndex.drawer + 1,
-          width: { md: `calc(100% - ${open ? drawerWidth : 0}px)` },
-          ml: { md: `${open ? drawerWidth : 0}px` },
+          width: { xs: '100%', md: `calc(100% - ${open ? drawerWidth : 0}px)` },
+          ml: { xs: 0, md: `${open ? drawerWidth : 0}px` },
           transition: theme.transitions.create(['width', 'margin'], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
@@ -144,23 +173,34 @@ const Layout = ({ children }) => {
           borderColor: 'divider',
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
           <IconButton
             color="inherit"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { md: open ? 'none' : 'inline-flex' } }}
+            sx={{ mr: 2, display: { xs: open ? 'none' : 'inline-flex', md: open ? 'none' : 'inline-flex' } }}
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 600 }}>
+          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' }, flexGrow: 1 }}>
             {menuItems.find(i => i.path === location.pathname)?.text || 'Accounting'}
           </Typography>
+          <Typography variant="body2" sx={{ mr: 2, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
+            {currentUser?.username} @ {currentBusiness?.name}
+          </Typography>
+          <Button 
+            variant="outlined" 
+            size="small" 
+            onClick={logout}
+            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+          >
+            Logout
+          </Button>
         </Toolbar>
       </AppBar>
       <Box
         component="nav"
-        sx={{ width: { md: open ? drawerWidth : 0 }, flexShrink: { md: 0 }, transition: 'width 0.3s' }}
+        sx={{ width: { xs: open ? drawerWidth : 0, md: open ? drawerWidth : 0 }, flexShrink: { md: 0 }, transition: 'width 0.3s' }}
       >
         <Drawer
           variant={isMobile ? "temporary" : "persistent"}
@@ -183,14 +223,47 @@ const Layout = ({ children }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { md: `calc(100% - ${open ? drawerWidth : 0}px)` },
-          mt: 8,
+          p: { xs: 1, sm: 2, md: 3 },
+          width: { xs: '100%', md: `calc(100% - ${open ? drawerWidth : 0}px)` },
+          mt: { xs: 7, sm: 8 },
           transition: 'margin 0.3s',
         }}
       >
         {children}
       </Box>
+
+      {/* Password Dialog for Business Switching */}
+      <Dialog open={passwordDialog.open} onClose={handlePasswordClose} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Switch to {passwordDialog.business?.name}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Enter the password for this business to switch to it.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Password"
+            type="password"
+            value={passwordDialog.password}
+            onChange={(e) => setPasswordDialog({ ...passwordDialog, password: e.target.value, error: '' })}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                handlePasswordSubmit();
+              }
+            }}
+            error={!!passwordDialog.error}
+            helperText={passwordDialog.error}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handlePasswordClose}>Cancel</Button>
+          <Button onClick={handlePasswordSubmit} variant="contained">
+            Switch Business
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

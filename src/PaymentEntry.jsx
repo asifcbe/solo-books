@@ -1,23 +1,24 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Box, Typography, Grid, TextField, MenuItem, Button, 
   Card, CardContent, Stack, Avatar, alpha, useTheme, 
-  Divider, InputAdornment, IconButton, InputBase, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow
+  Divider, InputAdornment, IconButton, InputBase, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  TablePagination
 } from '@mui/material';
 import { 
   CheckCircle2, ArrowLeft, Landmark, Banknote, 
   CreditCard, User, Search, 
   Calendar, FileClock, Wallet, ArrowDownRight, ArrowUpRight
 } from 'lucide-react';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useBusiness } from './BusinessContext';
+import { useData } from './DataContext';
 import { useNavigate } from 'react-router-dom';
 
 const PaymentEntry = ({ mode = 'payment-in' }) => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { currentBusiness } = useBusiness();
+  const { data, addItem, updateItem, deleteItem, getItems } = useData();
   
   // States
   const [formData, setFormData] = useState({
@@ -30,12 +31,24 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
     end: new Date().toISOString().split('T')[0]
   });
 
+  // Additional filter states
+  const [filters, setFilters] = useState({
+    paymentMode: 'all',
+    minAmount: '',
+    maxAmount: '',
+    sortBy: 'date', // date, amount, party
+    sortOrder: 'desc' // asc, desc
+  });
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
   // Database Queries
-  const parties = useLiveQuery(() => db.parties.where('businessId').equals(currentBusiness?.id || 0).toArray(), [currentBusiness]) || [];
-  const transactions = useLiveQuery(() => 
-    db.transactions.where('businessId').equals(currentBusiness?.id || 0)
-    .filter(t => t.type === (mode === 'payment-in' ? 'PaymentIn' : 'PaymentOut'))
-    .toArray(), [currentBusiness, mode]) || [];
+  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
+  const transactions = getItems('transactions')
+    .filter(t => t.businessId === currentBusiness?.id && t.type === (mode === 'payment-in' ? 'PaymentIn' : 'PaymentOut'));
 
   const isPaymentIn = mode === 'payment-in';
   const accentColor = isPaymentIn ? theme.palette.success.main : theme.palette.warning.main;
@@ -46,15 +59,46 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
     return transactions.filter(t => {
       const matchesSearch = t.partyName.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesDate = t.date >= dateRange.start && t.date <= dateRange.end;
-      return matchesSearch && matchesDate;
-    }).sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [transactions, searchQuery, dateRange]);
+      
+      // Additional filters
+      const matchesPaymentMode = filters.paymentMode === 'all' || t.paymentMode === filters.paymentMode;
+      const matchesMinAmount = !filters.minAmount || t.totalAmount >= parseFloat(filters.minAmount);
+      const matchesMaxAmount = !filters.maxAmount || t.totalAmount <= parseFloat(filters.maxAmount);
+      
+      return matchesSearch && matchesDate && matchesPaymentMode && matchesMinAmount && matchesMaxAmount;
+    }).sort((a, b) => {
+      let aValue, bValue;
+      switch (filters.sortBy) {
+        case 'amount':
+          aValue = a.amount;
+          bValue = b.amount;
+          break;
+        case 'party':
+          aValue = a.partyName.toLowerCase();
+          bValue = b.partyName.toLowerCase();
+          break;
+        default:
+          aValue = new Date(a.date);
+          bValue = new Date(b.date);
+      }
+      
+      if (filters.sortOrder === 'desc') {
+        return aValue < bValue ? 1 : -1;
+      }
+      return aValue > bValue ? 1 : -1;
+    });
+  }, [transactions, searchQuery, dateRange, filters]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, dateRange, filters]);
 
   const handleSave = async () => {
     if (!formData.partyId || !formData.amount) return;
     const amountNum = parseFloat(formData.amount);
     
-    await db.transactions.add({
+    addItem('transactions', {
       businessId: currentBusiness.id, partyId: formData.partyId, partyName: selectedParty.name,
       type: isPaymentIn ? 'PaymentIn' : 'PaymentOut', totalAmount: amountNum,
       date: formData.date, paymentMode: formData.paymentMode,
@@ -62,7 +106,7 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
     });
 
     const newBalance = (selectedParty.balance || 0) + (isPaymentIn ? -amountNum : amountNum);
-    await db.parties.update(formData.partyId, { balance: newBalance });
+    updateItem('parties', formData.partyId, { balance: newBalance });
     setFormData({ ...formData, amount: '', referenceNo: '', notes: '' });
   };
 
@@ -125,9 +169,75 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
               </Paper>
               <TextField type="date" size="small" value={dateRange.start} onChange={(e) => setDateRange({...dateRange, start: e.target.value})} />
               <TextField type="date" size="small" value={dateRange.end} onChange={(e) => setDateRange({...dateRange, end: e.target.value})} />
+              <Button 
+                onClick={() => setShowFilters(!showFilters)}
+                variant="outlined"
+                size="small"
+              >
+                {showFilters ? 'Hide' : 'More'}
+              </Button>
             </Box>
+
+            {showFilters && (
+              <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Payment Mode"
+                      value={filters.paymentMode}
+                      onChange={(e) => setFilters({...filters, paymentMode: e.target.value})}
+                      size="small"
+                    >
+                      <MenuItem value="all">All Modes</MenuItem>
+                      <MenuItem value="Cash">Cash</MenuItem>
+                      <MenuItem value="Bank">Bank</MenuItem>
+                      <MenuItem value="Cheque">Cheque</MenuItem>
+                      <MenuItem value="UPI">UPI</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Min Amount"
+                      type="number"
+                      value={filters.minAmount}
+                      onChange={(e) => setFilters({...filters, minAmount: e.target.value})}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Max Amount"
+                      type="number"
+                      value={filters.maxAmount}
+                      onChange={(e) => setFilters({...filters, maxAmount: e.target.value})}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={3}>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Sort By"
+                      value={filters.sortBy}
+                      onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+                      size="small"
+                    >
+                      <MenuItem value="date">Date</MenuItem>
+                      <MenuItem value="amount">Amount</MenuItem>
+                      <MenuItem value="party">Party</MenuItem>
+                    </TextField>
+                  </Grid>
+                </Grid>
+              </Box>
+            )}
             <TableContainer sx={{ flexGrow: 1 }}>
-              <Table stickyHeader size="small">
+              <Table stickyHeader size="small" sx={{ minWidth: 650 }}>
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ fontWeight: 700, bgcolor: 'background.default' }}>Date</TableCell>
@@ -137,7 +247,9 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredHistory.map((row) => (
+                  {filteredHistory
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((row) => (
                     <TableRow key={row.id} hover>
                       <TableCell>{row.date}</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>{row.partyName}</TableCell>
@@ -147,6 +259,19 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
                   ))}
                 </TableBody>
               </Table>
+              <TablePagination
+                component="div"
+                count={filteredHistory.length}
+                page={page}
+                onPageChange={(event, newPage) => setPage(newPage)}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={(event) => {
+                  setRowsPerPage(parseInt(event.target.value, 10));
+                  setPage(0);
+                }}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                sx={{ borderTop: '1px solid', borderColor: 'divider' }}
+              />
             </TableContainer>
           </Card>
         </Grid>

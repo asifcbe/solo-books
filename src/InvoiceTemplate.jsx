@@ -1,5 +1,4 @@
 import React, { forwardRef } from 'react';
-import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Divider, Grid } from '@mui/material';
 
 const InvoiceTemplate = forwardRef(({ transaction, business }, ref) => {
   if (!transaction || !business) return null;
@@ -7,104 +6,113 @@ const InvoiceTemplate = forwardRef(({ transaction, business }, ref) => {
   const isSale = transaction.type === 'Sales';
 
   return (
-    <Box ref={ref} sx={{ p: 6, bgcolor: 'white', color: 'black', width: '210mm', minHeight: '297mm', mx: 'auto', border: '1px solid #eee' }}>
+    <div ref={ref} style={{ 
+      padding: '40px', 
+      backgroundColor: 'white', 
+      color: 'black', 
+      width: '210mm', 
+      minHeight: '297mm', 
+      margin: 'auto', 
+      border: '1px solid #eee',
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '14px',
+      lineHeight: '1.4'
+    }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.main', mb: 0.5 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
+        <div>
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 4px 0' }}>
             {business.name}
-          </Typography>
-          <Typography variant="body2">{business.address}</Typography>
-          <Typography variant="body2">Phone: {business.phone}</Typography>
-          {business.gstNumber && <Typography variant="body2">GSTIN: {business.gstNumber}</Typography>}
-        </Box>
-        <Box sx={{ textAlign: 'right' }}>
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
+          </h1>
+          <p style={{ margin: '4px 0' }}>{business.address}</p>
+          <p style={{ margin: '4px 0' }}>Phone: {business.phone}</p>
+          {business.gstNumber && <p style={{ margin: '4px 0' }}>GSTIN: {business.gstNumber}</p>}
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
             {isSale ? 'TAX INVOICE' : 'PURCHASE BILL'}
-          </Typography>
-          <Typography variant="body2"># {transaction.invoiceNumber}</Typography>
-          <Typography variant="body2">Date: {transaction.date}</Typography>
-        </Box>
-      </Box>
+          </h2>
+          <p style={{ margin: '4px 0' }}># {transaction.invoiceNumber}</p>
+          <p style={{ margin: '4px 0' }}>Date: {transaction.date}</p>
+        </div>
+      </div>
 
-      <Divider sx={{ mb: 4 }} />
+      <hr style={{ border: 'none', borderTop: '1px solid #ccc', marginBottom: '32px' }} />
 
       {/* Bill To / From */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, textTransform: 'uppercase', color: 'text.secondary' }}>
+      <div style={{ marginBottom: '32px' }}>
+        <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 8px 0', textTransform: 'uppercase', color: '#666' }}>
           {isSale ? 'Bill To:' : 'Vendor Details:'}
-        </Typography>
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>{transaction.partyName}</Typography>
+        </h3>
+        <h4 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0' }}>{transaction.partyName}</h4>
         {/* We could fetch party details if needed, but for now we use what's in tx */}
-      </Box>
+      </div>
 
       {/* Items Table */}
-      <TableContainer>
-        <Table size="small">
-          <TableHead sx={{ bgcolor: '#f3f4f6' }}>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>#</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Item Description</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Qty</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Rate</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">GST %</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Amount</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {transaction.items.map((item, index) => (
-              <TableRow key={index}>
-                <TableCell>{index + 1}</TableCell>
-                <TableCell sx={{ fontWeight: 500 }}>{item.name}</TableCell>
-                <TableCell align="right">{item.qty}</TableCell>
-                <TableCell align="right">₹{item.price.toFixed(2)}</TableCell>
-                <TableCell align="right">{item.taxRate}%</TableCell>
-                <TableCell align="right">₹{item.total.toFixed(2)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '32px' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#f3f4f6' }}>
+            <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', border: '1px solid #ddd' }}>#</th>
+            <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', border: '1px solid #ddd' }}>Item Description</th>
+            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Qty</th>
+            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Rate</th>
+            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>GST %</th>
+            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transaction.items.map((item, index) => (
+            <tr key={index}>
+              <td style={{ padding: '12px', border: '1px solid #ddd' }}>{index + 1}</td>
+              <td style={{ padding: '12px', border: '1px solid #ddd', fontWeight: '500' }}>{item.name}</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>{item.qty}</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>₹{item.price.toFixed(2)}</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>{item.taxRate}%</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>₹{item.total.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {/* Totals */}
-      <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-        <Box sx={{ width: 250 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2" color="text.secondary">Subtotal</Typography>
-            <Typography variant="body2">₹{transaction.subtotal?.toFixed(2)}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2" color="text.secondary">Tax Amount</Typography>
-            <Typography variant="body2">₹{transaction.taxAmount?.toFixed(2)}</Typography>
-          </Box>
-          <Divider sx={{ my: 1 }} />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Total</Typography>
-            <Typography variant="h6" sx={{ fontWeight: 800, color: 'primary.main' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ width: '250px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ color: '#666' }}>Subtotal</span>
+            <span>₹{transaction.subtotal?.toFixed(2)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ color: '#666' }}>Tax Amount</span>
+            <span>₹{transaction.taxAmount?.toFixed(2)}</span>
+          </div>
+          <hr style={{ border: 'none', borderTop: '1px solid #ccc', margin: '8px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>Total</span>
+            <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#1976d2' }}>
               ₹{transaction.totalAmount?.toFixed(2)}
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Footer */}
-      <Box sx={{ mt: 'auto', pt: 8 }}>
-        <Grid container spacing={4}>
-          <Grid item xs={6}>
-            <Typography variant="caption" color="text.secondary" display="block">Terms & Conditions:</Typography>
-            <Typography variant="caption" color="text.secondary">
+      <div style={{ marginTop: 'auto', paddingTop: '64px' }}>
+        <div style={{ display: 'flex', gap: '32px' }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#666', fontWeight: 'bold' }}>Terms & Conditions:</p>
+            <p style={{ margin: '0', fontSize: '12px', color: '#666' }}>
               1. Goods once sold will not be taken back.<br />
               2. Interest @ 18% will be charged if payment is not made within 7 days.
-            </Typography>
-          </Grid>
-          <Grid item xs={6} sx={{ textAlign: 'right' }}>
-            <Box sx={{ height: 60 }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>For {business.name}</Typography>
-            <Typography variant="caption" color="text.secondary">Authorized Signatory</Typography>
-          </Grid>
-        </Grid>
-      </Box>
-    </Box>
+            </p>
+          </div>
+          <div style={{ flex: 1, textAlign: 'right' }}>
+            <div style={{ height: '40px' }}></div>
+            <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>For {business.name}</p>
+            <p style={{ margin: '0', fontSize: '12px', color: '#666' }}>Authorized Signatory</p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 });
 

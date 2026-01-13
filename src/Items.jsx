@@ -1,39 +1,31 @@
 import React, { useState } from 'react';
-import { 
-  Box, Button, Card, CardContent, Typography, TextField, Dialog, 
-  DialogTitle, DialogContent, DialogActions, Grid, Table, TableBody, 
-  TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, 
-  InputAdornment, Chip, MenuItem
+import {
+  Box, Button, Card, CardContent, Typography, TextField, Dialog,
+  DialogTitle, DialogContent, DialogActions, Grid, MenuItem,
+  InputAdornment, Chip, IconButton
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Box as BoxIcon, Tag } from 'lucide-react';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { Plus, Edit2, Trash2, Box as BoxIcon } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
+import { useData } from './DataContext';
+import DataGrid from './DataGrid';
 
 const UNITES = ['NOS', 'BAGS', 'BOX', 'KGS', 'Ltr', 'Mtr', 'Pcs'];
 const TAX_SLABS = [0, 5, 12, 18, 28];
 
 const ItemsPage = () => {
   const { currentBusiness } = useBusiness();
-  const [search, setSearch] = useState('');
+  const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const [open, setOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({
-    name: '', unit: 'NOS', salePrice: 0, purchasePrice: 0, 
+    name: '', unit: 'NOS', salePrice: 0, purchasePrice: 0,
     taxRate: 18, hsnCode: '', stock: 0
   });
 
-  const items = useLiveQuery(
-    () => db.items
-      .where('businessId').equals(currentBusiness?.id || 0)
-      .toArray(),
-    [currentBusiness]
-  ) || [];
+  // Filter states for DataGrid
+  const [filters, setFilters] = useState({});
 
-  const filteredItems = items.filter(i => 
-    i.name.toLowerCase().includes(search.toLowerCase()) || 
-    i.hsnCode.includes(search)
-  );
+  const items = getItems('items').filter(item => item.businessId === currentBusiness?.id);
 
   const handleOpen = (item = null) => {
     if (item) {
@@ -53,20 +45,92 @@ const ItemsPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { ...formData, businessId: currentBusiness.id };
+    const itemData = { ...formData, businessId: currentBusiness.id };
     if (editingItem) {
-      await db.items.update(editingItem.id, data);
+      updateItem('items', editingItem.id, itemData);
     } else {
-      await db.items.add(data);
+      addItem('items', itemData);
     }
     handleClose();
   };
 
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
-      await db.items.delete(id);
+      deleteItem('items', id);
     }
   };
+
+  // DataGrid columns configuration
+  const columns = [
+    {
+      key: 'name',
+      header: 'Item Name',
+      width: 250,
+      searchable: true,
+      render: (value, row) => (
+        <Box>
+          <Typography variant="body2" sx={{ fontWeight: 500 }}>{value}</Typography>
+          <Typography variant="caption" color="text.secondary">{row.unit}</Typography>
+        </Box>
+      )
+    },
+    {
+      key: 'hsnCode',
+      header: 'HSN Code',
+      width: 120,
+      searchable: true,
+      render: (value) => value || '-'
+    },
+    {
+      key: 'salePrice',
+      header: 'Sale Price',
+      width: 120,
+      align: 'right',
+      filterType: 'range',
+      render: (value) => `₹${value?.toFixed(2) || '0.00'}`
+    },
+    {
+      key: 'taxRate',
+      header: 'Tax Rate',
+      width: 100,
+      align: 'right',
+      filterType: 'select',
+      filterOptions: TAX_SLABS.map(rate => ({ value: rate.toString(), label: `${rate}%` })),
+      render: (value) => `${value || 0}%`
+    },
+    {
+      key: 'stock',
+      header: 'Stock',
+      width: 120,
+      align: 'right',
+      filterType: 'range',
+      render: (value, row) => (
+        <Chip
+          label={`${value || 0} ${row.unit}`}
+          size="small"
+          color={value > 10 ? 'success' : value > 0 ? 'warning' : 'error'}
+        />
+      )
+    },
+    {
+      key: 'unit',
+      header: 'Unit',
+      width: 100,
+      filterType: 'select',
+      filterOptions: UNITES.map(unit => ({ value: unit, label: unit }))
+    }
+  ];
+
+  const actions = (row) => (
+    <Box sx={{ display: 'flex', gap: 0.5 }}>
+      <IconButton size="small" color="primary" onClick={() => handleOpen(row)}>
+        <Edit2 size={16} />
+      </IconButton>
+      <IconButton size="small" color="error" onClick={() => handleDelete(row.id)}>
+        <Trash2 size={16} />
+      </IconButton>
+    </Box>
+  );
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
@@ -81,75 +145,20 @@ const ItemsPage = () => {
         </Button>
       </Box>
 
-      <Card sx={{ mb: 4 }}>
-        <CardContent>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Search by name or HSN..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search size={18} />
-                </InputAdornment>
-              ),
-            }}
-            sx={{ mb: 3 }}
-          />
-
-          <TableContainer component={Paper} variant="outlined">
-            <Table>
-              <TableHead sx={{ bgcolor: 'background.default' }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Item Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>HSN</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Sale Price</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Tax</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Stock</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredItems.map((item) => (
-                  <TableRow key={item.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{item.name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{item.unit}</Typography>
-                    </TableCell>
-                    <TableCell>{item.hsnCode || '-'}</TableCell>
-                    <TableCell align="right">₹{item.salePrice.toFixed(2)}</TableCell>
-                    <TableCell align="right">{item.taxRate}%</TableCell>
-                    <TableCell align="right">
-                      <Chip 
-                        label={`${item.stock} ${item.unit}`} 
-                        size="small"
-                        color={item.stock > 10 ? 'success' : item.stock > 0 ? 'warning' : 'error'}
-                      />
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleOpen(item)} color="primary">
-                        <Edit2 size={16} />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => handleDelete(item.id)} color="error">
-                        <Trash2 size={16} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredItems.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">No items found</Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </CardContent>
-      </Card>
+      <DataGrid
+        data={items}
+        columns={columns}
+        title="Items / Inventory"
+        searchPlaceholder="Search by name or HSN code..."
+        enableSearch={true}
+        enableFilters={true}
+        enablePagination={true}
+        enableSorting={true}
+        pageSize={15}
+        emptyMessage="No items found. Add your first inventory item."
+        actions={actions}
+        height={600}
+      />
 
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
         <form onSubmit={handleSubmit}>

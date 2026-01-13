@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, Button, Card, CardContent, Typography, TextField, Dialog, 
   DialogTitle, DialogContent, DialogActions, Grid, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, 
-  Tabs, Tab, Chip, InputAdornment
+  Tabs, Tab, Chip, InputAdornment, MenuItem, Autocomplete, TablePagination
 } from '@mui/material';
 import { Plus, Search, Edit2, Trash2, Phone, MapPin, Calculator } from 'lucide-react';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useBusiness } from './BusinessContext';
+import { useData } from './DataContext';
 
 const PartiesPage = () => {
   const { currentBusiness } = useBusiness();
+  const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const [tab, setTab] = useState(0);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -20,19 +20,63 @@ const PartiesPage = () => {
     name: '', type: 'Customer', phone: '', gstNumber: '', address: '', balance: 0
   });
 
-  const parties = useLiveQuery(
-    () => db.parties
-      .where('businessId').equals(currentBusiness?.id || 0)
-      .toArray(),
-    [currentBusiness]
-  ) || [];
-
-  const filteredParties = parties.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
-                          p.phone.includes(search);
-    const matchesTab = tab === 0 ? p.type === 'Customer' : p.type === 'Vendor';
-    return matchesSearch && matchesTab;
+  // Filter states
+  const [filters, setFilters] = useState({
+    balanceMin: '',
+    balanceMax: '',
+    hasGST: 'all', // all, yes, no
+    sortBy: 'name', // name, balance, phone
+    sortOrder: 'asc' // asc, desc
   });
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
+
+  const filteredParties = parties
+    .filter(p => {
+      const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
+                            p.phone.includes(search);
+      const matchesTab = tab === 0 ? p.type === 'Customer' : p.type === 'Vendor';
+      
+      // Additional filters
+      const matchesBalanceMin = !filters.balanceMin || p.balance >= parseFloat(filters.balanceMin);
+      const matchesBalanceMax = !filters.balanceMax || p.balance <= parseFloat(filters.balanceMax);
+      const matchesGST = filters.hasGST === 'all' || 
+                        (filters.hasGST === 'yes' && p.gstNumber) || 
+                        (filters.hasGST === 'no' && !p.gstNumber);
+      
+      return matchesSearch && matchesTab && matchesBalanceMin && matchesBalanceMax && matchesGST;
+    })
+    .sort((a, b) => {
+      let aValue, bValue;
+      switch (filters.sortBy) {
+        case 'balance':
+          aValue = a.balance;
+          bValue = b.balance;
+          break;
+        case 'phone':
+          aValue = a.phone;
+          bValue = b.phone;
+          break;
+        default:
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+      }
+      
+      if (filters.sortOrder === 'desc') {
+        return aValue < bValue ? 1 : -1;
+      }
+      return aValue > bValue ? 1 : -1;
+    });
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [search, tab, filters]);
 
   const handleOpen = (party = null) => {
     if (party) {
@@ -49,18 +93,18 @@ const PartiesPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = { ...formData, businessId: currentBusiness.id };
+    const partyData = { ...formData, businessId: currentBusiness.id };
     if (editingParty) {
-      await db.parties.update(editingParty.id, data);
+      updateItem('parties', editingParty.id, partyData);
     } else {
-      await db.parties.add(data);
+      addItem('parties', partyData);
     }
     handleClose();
   };
 
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this party?')) {
-      await db.parties.delete(id);
+      deleteItem('parties', id);
     }
   };
 
@@ -101,8 +145,98 @@ const PartiesPage = () => {
             sx={{ mb: 3 }}
           />
 
+          {/* Filter Controls */}
+          <Box sx={{ mb: 3 }}>
+            <Button 
+              onClick={() => setShowFilters(!showFilters)}
+              variant="outlined"
+              size="small"
+              sx={{ mr: 2 }}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+            {(filters.balanceMin || filters.balanceMax || filters.hasGST !== 'all' || filters.sortBy !== 'name' || filters.sortOrder !== 'asc') && (
+              <Button 
+                onClick={() => setFilters({ balanceMin: '', balanceMax: '', hasGST: 'all', sortBy: 'name', sortOrder: 'asc' })}
+                variant="text"
+                size="small"
+                color="error"
+              >
+                Clear Filters
+              </Button>
+            )}
+          </Box>
+          
+          {showFilters && (
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="Min Balance"
+                  type="number"
+                  value={filters.balanceMin}
+                  onChange={(e) => setFilters({...filters, balanceMin: e.target.value})}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="Max Balance"
+                  type="number"
+                  value={filters.balanceMax}
+                  onChange={(e) => setFilters({...filters, balanceMax: e.target.value})}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  select
+                  fullWidth
+                  label="GST Status"
+                  value={filters.hasGST}
+                  onChange={(e) => setFilters({...filters, hasGST: e.target.value})}
+                  size="small"
+                >
+                  <MenuItem value="all">All Parties</MenuItem>
+                  <MenuItem value="yes">Has GST</MenuItem>
+                  <MenuItem value="no">No GST</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Sort By"
+                  value={filters.sortBy}
+                  onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+                  size="small"
+                >
+                  <MenuItem value="name">Name</MenuItem>
+                  <MenuItem value="balance">Balance</MenuItem>
+                  <MenuItem value="phone">Phone</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Sort Order"
+                  value={filters.sortOrder}
+                  onChange={(e) => setFilters({...filters, sortOrder: e.target.value})}
+                  size="small"
+                >
+                  <MenuItem value="asc">Ascending</MenuItem>
+                  <MenuItem value="desc">Descending</MenuItem>
+                </TextField>
+              </Grid>
+            </Grid>
+          )}
+
           <TableContainer component={Paper} variant="outlined">
-            <Table>
+            <Table sx={{ minWidth: 650 }}>
               <TableHead sx={{ bgcolor: 'background.default' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
@@ -113,7 +247,9 @@ const PartiesPage = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredParties.map((party) => (
+                {filteredParties
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((party) => (
                   <TableRow key={party.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>{party.name}</Typography>
@@ -149,6 +285,20 @@ const PartiesPage = () => {
               </TableBody>
             </Table>
           </TableContainer>
+
+          <TablePagination
+            component="div"
+            count={filteredParties.length}
+            page={page}
+            onPageChange={(event, newPage) => setPage(newPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(parseInt(event.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            sx={{ borderTop: '1px solid', borderColor: 'divider' }}
+          />
         </CardContent>
       </Card>
 

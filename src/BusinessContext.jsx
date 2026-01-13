@@ -1,24 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useData } from './DataContext';
 
 const BusinessContext = createContext();
 
 export const BusinessProvider = ({ children }) => {
+  const { data, loading } = useData();
   const [currentBusinessId, setCurrentBusinessId] = useState(() => {
     return localStorage.getItem('currentBusinessId') || null;
   });
 
-  const businesses = useLiveQuery(() => db.businesses.toArray()) || [];
+  const businesses = data.businesses || [];
   
   const currentBusiness = businesses.find(b => b.id === Number(currentBusinessId)) || businesses[0];
 
   useEffect(() => {
-    if (currentBusiness) {
+    if (currentBusiness && !loading) {
       setCurrentBusinessId(currentBusiness.id);
       localStorage.setItem('currentBusinessId', currentBusiness.id);
     }
-  }, [currentBusiness]);
+  }, [currentBusiness, loading]);
 
   const switchBusiness = (id) => {
     setCurrentBusinessId(id);

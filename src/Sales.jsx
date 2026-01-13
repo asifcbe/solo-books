@@ -2,49 +2,74 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Box, Button, Card, CardContent, Typography, TextField, Grid, 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-  Paper, IconButton, MenuItem, Divider, Autocomplete, InputAdornment, Chip
+  Paper, IconButton, MenuItem, Divider, Autocomplete, InputAdornment, Chip,
+  TablePagination, FormControlLabel, Switch
 } from '@mui/material';
 import { Plus, Trash2, Printer, Save, ChevronLeft, Receipt, ShoppingBasket, Edit } from 'lucide-react';
-import { db } from './db';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useBusiness } from './BusinessContext';
+import { useData } from './DataContext';
 import { useReactToPrint } from 'react-to-print';
 import InvoiceTemplate from './InvoiceTemplate';
 
 const SalesPage = ({ mode = 'sales' }) => {
   const isSale = mode === 'sales';
   const { currentBusiness } = useBusiness();
+  const { data, addItem, updateItem, deleteItem, getItems } = useData();
   const [view, setView] = useState('list'); // 'list' or 'create' or 'edit'
   const [editId, setEditId] = useState(null);
   const [selectedParty, setSelectedParty] = useState(null);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [items, setItems] = useState([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+  const [description, setDescription] = useState('');
+  const [noGST, setNoGST] = useState(false);
   const [printingTx, setPrintingTx] = useState(null);
   const printRef = useRef();
+
+  // Filter states
+  const [filters, setFilters] = useState({
+    dateFrom: '',
+    dateTo: '',
+    partyId: '',
+    minAmount: '',
+    maxAmount: '',
+    status: 'all' // all, completed
+  });
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
   });
 
   // Queries
-  const parties = useLiveQuery(() => 
-    db.parties.where('businessId').equals(currentBusiness?.id || 0)
-      .and(p => p.type === (isSale ? 'Customer' : 'Vendor'))
-      .toArray()
-  , [currentBusiness, isSale]) || [];
+  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id && p.type === (isSale ? 'Customer' : 'Vendor'));
 
-  const stockItems = useLiveQuery(() => db.items.where('businessId').equals(currentBusiness?.id || 0).toArray()) || [];
+  const stockItems = getItems('items').filter(item => item.businessId === currentBusiness?.id);
   
-  const transactions = useLiveQuery(
-    () => db.transactions
-      .where('businessId').equals(currentBusiness?.id || 0)
-      .and(t => t.type === (isSale ? 'Sales' : 'Purchases'))
-      .reverse()
-      .toArray(),
-    [currentBusiness, isSale]
-  ) || [];
-
+  const transactions = getItems('transactions')
+    .filter(tx => tx.businessId === currentBusiness?.id && tx.type === (isSale ? 'Sales' : 'Purchases'))
+    .filter(tx => {
+      // Date range filter
+      if (filters.dateFrom && new Date(tx.date) < new Date(filters.dateFrom)) return false;
+      if (filters.dateTo && new Date(tx.date) > new Date(filters.dateTo)) return false;
+      
+      // Party filter
+      if (filters.partyId && tx.partyId !== filters.partyId) return false;
+      
+      // Amount range filter
+      if (filters.minAmount && tx.totalAmount < parseFloat(filters.minAmount)) return false;
+      if (filters.maxAmount && tx.totalAmount > parseFloat(filters.maxAmount)) return false;
+      
+      // Status filter
+      if (filters.status !== 'all' && tx.status !== filters.status) return false;
+      
+      return true;
+    })
+    .reverse();
   useEffect(() => {
     if (view === 'create') {
       const prefix = isSale ? 'INV' : 'BILL';
@@ -52,9 +77,16 @@ const SalesPage = ({ mode = 'sales' }) => {
       setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
       setSelectedParty(null);
       setInvoiceDate(new Date().toISOString().split('T')[0]);
+      setDescription('');
+      setNoGST(false);
       setEditId(null);
     }
   }, [view, isSale]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [filters]);
 
   // Logic Handlers
   const addItemRow = () => {
@@ -91,6 +123,9 @@ const SalesPage = ({ mode = 'sales' }) => {
   const handleSave = async () => {
     if (!selectedParty) return alert('Please select a party');
     
+    const finalTaxAmount = noGST ? 0 : calculateTax();
+    const finalTotalAmount = calculateSubtotal() + finalTaxAmount;
+    
     const transactionData = {
       businessId: currentBusiness.id,
       partyId: selectedParty.id,
@@ -98,89 +133,85 @@ const SalesPage = ({ mode = 'sales' }) => {
       type: isSale ? 'Sales' : 'Purchases',
       date: invoiceDate,
       invoiceNumber,
-      items: items.filter(i => i.name),
+      items: items.filter(i => i.name).map(item => ({
+        ...item,
+        taxRate: noGST ? 0 : item.taxRate
+      })),
+      description,
+      noGST,
       subtotal: calculateSubtotal(),
-      taxAmount: calculateTax(),
-      totalAmount: calculateTotal(),
+      taxAmount: finalTaxAmount,
+      totalAmount: finalTotalAmount,
     };
 
-    try {
-      await db.transaction('rw', [db.transactions, db.parties, db.items], async () => {
-        if (editId) {
-          const oldTx = await db.transactions.get(editId);
-          if (oldTx) {
-            // Rollback old effects
-            const oldBalanceRollback = isSale ? -oldTx.totalAmount : oldTx.totalAmount;
-            const oldParty = await db.parties.get(oldTx.partyId);
-            if(oldParty) await db.parties.update(oldTx.partyId, { balance: oldParty.balance + oldBalanceRollback });
+    if (editId) {
+      const oldTx = getItems('transactions').find(t => t.id === editId);
+      if (oldTx) {
+        // Rollback old effects
+        const oldBalanceRollback = isSale ? -oldTx.totalAmount : oldTx.totalAmount;
+        const oldParty = getItems('parties').find(p => p.id === oldTx.partyId);
+        if(oldParty) updateItem('parties', oldTx.partyId, { balance: oldParty.balance + oldBalanceRollback });
 
-            for (const item of oldTx.items) {
-              if (item.itemId) {
-                const stockItem = await db.items.get(item.itemId);
-                if (stockItem) {
-                  const stockRollback = isSale ? item.qty : -item.qty;
-                  await db.items.update(item.itemId, { stock: stockItem.stock + stockRollback });
-                }
-              }
-            }
-          }
-        }
-
-        if (editId) {
-          await db.transactions.update(editId, transactionData);
-        } else {
-          await db.transactions.add(transactionData);
-        }
-        
-        // Apply new effects
-        const balanceChange = isSale ? transactionData.totalAmount : -transactionData.totalAmount;
-        const newParty = await db.parties.get(selectedParty.id);
-        if(newParty) await db.parties.update(selectedParty.id, { balance: newParty.balance + balanceChange });
-
-        for (const item of transactionData.items) {
+        for (const item of oldTx.items) {
           if (item.itemId) {
-            const stockItem = await db.items.get(item.itemId);
+            const stockItem = getItems('items').find(i => i.id === item.itemId);
             if (stockItem) {
-              const stockChange = isSale ? -item.qty : item.qty;
-              await db.items.update(item.itemId, { stock: stockItem.stock + stockChange });
+              const stockRollback = isSale ? item.qty : -item.qty;
+              updateItem('items', item.itemId, { stock: stockItem.stock + stockRollback });
             }
           }
         }
-      });
-      setView('list');
-      setEditId(null);
-    } catch (error) {
-      console.error("Save failed:", error);
-      alert("Failed to save: " + error.message);
+      }
     }
+
+    if (editId) {
+      updateItem('transactions', editId, transactionData);
+    } else {
+      addItem('transactions', transactionData);
+    }
+    // Apply new effects
+    const balanceChange = isSale ? transactionData.totalAmount : -transactionData.totalAmount;
+    const newParty = getItems('parties').find(p => p.id === selectedParty.id);
+    if(newParty) updateItem('parties', selectedParty.id, { balance: newParty.balance + balanceChange });
+
+    for (const item of transactionData.items) {
+      if (item.itemId) {
+        const stockItem = getItems('items').find(i => i.id === item.itemId);
+        if (stockItem) {
+          const stockChange = isSale ? -item.qty : item.qty;
+          updateItem('items', item.itemId, { stock: stockItem.stock + stockChange });
+        }
+      }
+    }
+    
+    setView('list');
+    setEditId(null);
   };
 
   const handleDelete = async (tx) => {
     if (!window.confirm(`Are you sure you want to delete this ${isSale ? 'invoice' : 'bill'}?`)) return;
 
     try {
-      await db.transaction('rw', [db.transactions, db.parties, db.items], async () => {
-        // 1. Reverse Balance
-        const balanceRollback = isSale ? -tx.totalAmount : tx.totalAmount;
-        const party = await db.parties.get(tx.partyId);
-        if (party) {
-          await db.parties.update(tx.partyId, { balance: party.balance + balanceRollback });
-        }
+      // 1. Reverse Balance
+      const balanceRollback = isSale ? -tx.totalAmount : tx.totalAmount;
+      const party = getItems('parties').find(p => p.id === tx.partyId);
+      if (party) {
+        updateItem('parties', tx.partyId, { balance: party.balance + balanceRollback });
+      }
 
-        // 2. Reverse Stock
-        for (const item of tx.items) {
-          if (item.itemId) {
-            const stockItem = await db.items.get(item.itemId);
-            if (stockItem) {
-              const stockRollback = isSale ? item.qty : -item.qty;
-              await db.items.update(item.itemId, { stock: stockItem.stock + stockRollback });
-            }
+      // 2. Reverse Stock
+      for (const item of tx.items) {
+        if (item.itemId) {
+          const stockItem = getItems('items').find(i => i.id === item.itemId);
+          if (stockItem) {
+            const stockRollback = isSale ? item.qty : -item.qty;
+            updateItem('items', item.itemId, { stock: stockItem.stock + stockRollback });
           }
         }
+      }
 
-        // 3. Delete Record
-        await db.transactions.delete(tx.id);
-      });
+      // 3. Delete Record
+      deleteItem('transactions', tx.id);
     } catch (error) {
       console.error("Delete failed:", error);
       alert("Error deleting record: " + error.message);
@@ -193,6 +224,8 @@ const SalesPage = ({ mode = 'sales' }) => {
     setInvoiceDate(tx.date);
     setInvoiceNumber(tx.invoiceNumber);
     setItems(tx.items.map(i => ({ ...i })));
+    setDescription(tx.description || '');
+    setNoGST(tx.noGST || false);
     setView('edit');
   };
 
@@ -250,6 +283,33 @@ const SalesPage = ({ mode = 'sales' }) => {
                       value={invoiceDate}
                       onChange={(e) => setInvoiceDate(e.target.value)}
                       InputLabelProps={{ shrink: true }}
+                    />
+                  </Grid>
+                </Grid>
+
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid item xs={12} sm={8}>
+                    <TextField
+                      fullWidth
+                      label="Description/Notes"
+                      placeholder="Add any additional notes or description..."
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      multiline
+                      rows={2}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={4} sx={{ display: 'flex', alignItems: 'center' }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={noGST}
+                          onChange={(e) => setNoGST(e.target.checked)}
+                          color="primary"
+                        />
+                      }
+                      label="No GST (0% tax)"
+                      sx={{ m: 0 }}
                     />
                   </Grid>
                 </Grid>
@@ -380,8 +440,108 @@ const SalesPage = ({ mode = 'sales' }) => {
         </Button>
       </Box>
 
-      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-        <Table>
+      {/* Filter Controls */}
+      <Card sx={{ mb: 3, borderRadius: 2 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Button 
+              onClick={() => setShowFilters(!showFilters)}
+              variant="outlined"
+              size="small"
+              sx={{ mr: 2 }}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+            {(filters.dateFrom || filters.dateTo || filters.partyId || filters.minAmount || filters.maxAmount || filters.status !== 'all') && (
+              <Button 
+                onClick={() => setFilters({ dateFrom: '', dateTo: '', partyId: '', minAmount: '', maxAmount: '', status: 'all' })}
+                variant="text"
+                size="small"
+                color="error"
+              >
+                Clear Filters
+              </Button>
+            )}
+          </Box>
+          
+          {showFilters && (
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="From Date"
+                  type="date"
+                  value={filters.dateFrom}
+                  onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                  InputLabelProps={{ shrink: true }}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="To Date"
+                  type="date"
+                  value={filters.dateTo}
+                  onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                  InputLabelProps={{ shrink: true }}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Autocomplete
+                  fullWidth
+                  size="small"
+                  options={parties}
+                  getOptionLabel={(option) => option.name}
+                  value={parties.find(p => p.id === filters.partyId) || null}
+                  onChange={(e, value) => setFilters({...filters, partyId: value?.id || ''})}
+                  renderInput={(params) => <TextField {...params} label={isSale ? 'Customer' : 'Vendor'} />}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Status"
+                  value={filters.status}
+                  onChange={(e) => setFilters({...filters, status: e.target.value})}
+                  size="small"
+                >
+                  <MenuItem value="all">All Status</MenuItem>
+                  <MenuItem value="completed">Completed</MenuItem>
+                  <MenuItem value="pending">Pending</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="Min Amount"
+                  type="number"
+                  value={filters.minAmount}
+                  onChange={(e) => setFilters({...filters, minAmount: e.target.value})}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  size="small"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  label="Max Amount"
+                  type="number"
+                  value={filters.maxAmount}
+                  onChange={(e) => setFilters({...filters, maxAmount: e.target.value})}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  size="small"
+                />
+              </Grid>
+            </Grid>
+          )}
+        </CardContent>
+      </Card>
+
+      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', overflowX: 'auto' }}>
+        <Table sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
@@ -393,7 +553,9 @@ const SalesPage = ({ mode = 'sales' }) => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {transactions.map((tx) => (
+            {transactions
+              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+              .map((tx) => (
               <TableRow key={tx.id} hover>
                 <TableCell>{tx.date}</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>{tx.invoiceNumber}</TableCell>
@@ -429,6 +591,20 @@ const SalesPage = ({ mode = 'sales' }) => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <TablePagination
+        component="div"
+        count={transactions.length}
+        page={page}
+        onPageChange={(event, newPage) => setPage(newPage)}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={(event) => {
+          setRowsPerPage(parseInt(event.target.value, 10));
+          setPage(0);
+        }}
+        rowsPerPageOptions={[5, 10, 25, 50]}
+        sx={{ borderTop: '1px solid', borderColor: 'divider' }}
+      />
 
       <div style={{ display: 'none' }}>
         <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} />
