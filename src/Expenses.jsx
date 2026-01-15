@@ -3,11 +3,14 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Dialog, 
   DialogTitle, DialogContent, DialogActions, Grid, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, 
-  InputAdornment, Chip, MenuItem, TablePagination
+  InputAdornment, Chip, MenuItem, TablePagination, Snackbar, Alert, alpha
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, DollarSign } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, DollarSign, Printer, Share2, Filter, Calendar, FileText } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
+import { useReactToPrint } from 'react-to-print';
+import ExpenseTemplate from './ExpenseTemplate';
+import { useRef } from 'react';
 
 const EXPENSE_CATEGORIES = ['Office Supplies', 'Travel', 'Utilities', 'Rent', 'Marketing', 'Equipment', 'Miscellaneous'];
 
@@ -32,10 +35,34 @@ const ExpensesPage = () => {
     sortOrder: 'desc' // asc, desc
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
+   
+
 
   // Pagination states
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [printingData, setPrintingData] = useState(null);
+  const printRef = useRef();
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+  });
+
+  const handleShare = (row) => {
+    const text = `*Expense Voucher from ${currentBusiness?.name || 'Solo Books'}*\n\n` +
+      `Amount: ₹${row.amount.toLocaleString()}\n` +
+      `Date: ${row.date}\n` +
+      `Category: ${row.category}\n` +
+      `Description: ${row.description}\n\n` +
+      `Shared via Solo Books`;
+    
+    if (navigator.share) {
+      navigator.share({ title: `Expense Voucher`, text }).catch(e => console.error(e));
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
 
   const expenses = getItems('expenses')
     .filter(e => e.businessId === currentBusiness?.id)
@@ -97,29 +124,33 @@ const ExpensesPage = () => {
 
   const handleClose = () => setOpen(false);
 
+  const showSnackbar = (message, severity = 'error') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate business
     if (!currentBusiness?.id) {
-      alert('Business not selected. Please refresh and try again.');
+      showSnackbar('Business not selected. Please refresh and try again.', 'error');
       return;
     }
 
     // Validate required fields
     if (!formData.category || !formData.description || !formData.description.trim()) {
-      alert('Please fill in all required fields');
+      showSnackbar('Please fill in all required fields', 'warning');
       return;
     }
 
     const amountNum = Number(formData.amount);
     if (isNaN(amountNum) || amountNum <= 0) {
-      alert('Please enter a valid amount greater than zero');
+      showSnackbar('Please enter a valid amount greater than zero', 'warning');
       return;
     }
 
     if (!formData.date) {
-      alert('Please select a date');
+      showSnackbar('Please select a date', 'warning');
       return;
     }
 
@@ -150,26 +181,32 @@ const ExpensesPage = () => {
         );
         
         if (!savedExpense) {
-          alert('Failed to save expense. Please check your connection and try again.');
+          showSnackbar('Failed to save expense. Please check your connection and try again.', 'error');
           return;
         }
       }
       
+      showSnackbar(editingExpense ? 'Expense updated successfully!' : 'Expense added successfully!', 'success');
       handleClose();
     } catch (error) {
       console.error('Error saving expense:', error);
-      alert('An error occurred while saving. Please try again.');
+      showSnackbar('An error occurred while saving. Please try again.', 'error');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this expense?')) {
-      deleteItem('expenses', id);
+    const expense = expenses.find(e => e.id === id);
+    if (expense && window.confirm(`Are you sure you want to delete this expense?`)) {
+      await deleteItem('expenses', id);
+      showSnackbar('Expense deleted successfully!', 'success');
     }
   };
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+      <div style={{ display: 'none' }}>
+        <ExpenseTemplate ref={printRef} data={printingData} business={currentBusiness} />
+      </div>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Expenses</Typography>
@@ -177,8 +214,22 @@ const ExpensesPage = () => {
         </Box>
         <Button 
           variant="contained" 
-          startIcon={<Plus size={18} />} 
+          startIcon={<Plus size={20} />} 
           onClick={() => handleOpen()}
+          sx={{ 
+            borderRadius: 3, 
+            px: 3, 
+            py: 1, 
+            fontWeight: 700,
+            background: 'linear-gradient(45deg, #4f46e5 30%, #6366f1 90%)',
+            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
+            '&:hover': {
+              background: 'linear-gradient(45deg, #4338ca 30%, #4f46e5 90%)',
+              transform: 'translateY(-1px)',
+              boxShadow: '0 6px 16px rgba(79, 70, 229, 0.3)',
+            },
+            transition: 'all 0.2s'
+          }}
         >
           Add Expense
         </Button>
@@ -186,11 +237,34 @@ const ExpensesPage = () => {
 
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} md={4}>
-          <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-            <CardContent sx={{ textAlign: 'center', py: 3 }}>
-              <DollarSign size={32} color="#f44336" style={{ marginBottom: 8 }} />
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>Total Expenses</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 800, color: 'error.main' }}>
+          <Card 
+            elevation={0} 
+            sx={{ 
+              borderRadius: 4, 
+              border: '1px solid', 
+              borderColor: 'error.light', 
+              bgcolor: 'rgba(244, 67, 54, 0.02)',
+              position: 'relative',
+              overflow: 'hidden',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '4px',
+                bgcolor: 'error.main',
+              }
+            }}
+          >
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Box sx={{ display: 'inline-flex', p: 1.5, borderRadius: '50%', bgcolor: 'rgba(244, 67, 54, 0.1)', mb: 2 }}>
+                <DollarSign size={28} color="#f44336" />
+              </Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 1 }}>
+                Total Expenses
+              </Typography>
+              <Typography variant="h3" sx={{ fontWeight: 900, color: 'error.main', mt: 1 }}>
                 ₹{totalExpenses.toLocaleString()}
               </Typography>
             </CardContent>
@@ -331,13 +405,13 @@ const ExpensesPage = () => {
 
           <TableContainer component={Paper} variant="outlined">
             <Table sx={{ minWidth: 650 }}>
-              <TableHead sx={{ bgcolor: 'background.default' }}>
+              <TableHead sx={{ bgcolor: 'rgba(0,0,0,0.02)' }}>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Category</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Amount</TableCell>
-                  <TableCell sx={{ fontWeight: 600 }} align="right">Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 800, py: 2 }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 800, py: 2 }}>Category</TableCell>
+                  <TableCell sx={{ fontWeight: 800, py: 2 }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 800, py: 2 }} align="right">Amount</TableCell>
+                  <TableCell sx={{ fontWeight: 800, py: 2 }} align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -354,6 +428,20 @@ const ExpensesPage = () => {
                       ₹{expense.amount.toFixed(2)}
                     </TableCell>
                     <TableCell align="right">
+                      <IconButton size="small" onClick={() => {
+                        setPrintingData(expense);
+                        setTimeout(() => handlePrint(), 100);
+                      }} color="primary" title="Print Voucher">
+                        <Printer size={16} />
+                      </IconButton>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: '#25D366' }}
+                        onClick={() => handleShare(expense)} 
+                        title="Share on WhatsApp"
+                      >
+                        <Share2 size={16} />
+                      </IconButton>
                       <IconButton size="small" onClick={() => handleOpen(expense)} color="primary">
                         <Edit2 size={16} />
                       </IconButton>
@@ -402,6 +490,13 @@ const ExpensesPage = () => {
                   label="Category"
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Filter size={18} color={alpha('#4f46e5', 0.6)} />
+                      </InputAdornment>
+                    ),
+                  }}
                 >
                   {EXPENSE_CATEGORIES.map(cat => <MenuItem key={cat} value={cat}>{cat}</MenuItem>)}
                 </TextField>
@@ -428,6 +523,13 @@ const ExpensesPage = () => {
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   InputLabelProps={{ shrink: true }}
                   required
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Calendar size={18} color={alpha('#4f46e5', 0.6)} />
+                      </InputAdornment>
+                    ),
+                  }}
                 />
               </Grid>
               <Grid item xs={12}>
@@ -439,16 +541,55 @@ const ExpensesPage = () => {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   required
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <FileText size={18} color={alpha('#4f46e5', 0.6)} sx={{ mr: 1, alignSelf: 'flex-start', mt: 1 }} />
+                      </InputAdornment>
+                    ),
+                  }}
                 />
               </Grid>
             </Grid>
           </DialogContent>
-          <DialogActions sx={{ p: 2 }}>
-            <Button onClick={handleClose}>Cancel</Button>
-            <Button type="submit" variant="contained">Save Expense</Button>
+          <DialogActions sx={{ p: 3, bgcolor: 'rgba(0,0,0,0.01)', borderTop: '1px solid', borderColor: 'divider' }}>
+            <Button onClick={handleClose} variant="outlined" sx={{ borderRadius: 2, px: 3 }}>
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              variant="contained" 
+              sx={{ 
+                borderRadius: 2, 
+                px: 4, 
+                background: 'linear-gradient(45deg, #4f46e5 30%, #6366f1 90%)',
+                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #4338ca 30%, #4f46e5 90%)',
+                }
+              }}
+            >
+              Save Expense
+            </Button>
           </DialogActions>
         </form>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

@@ -68,5 +68,35 @@ button:focus-visible {
   }
 }
 
+@media print {
+  .no-print, 
+  header, 
+  nav, 
+  aside, 
+  .MuiDrawer-root, 
+  .MuiAppBar-root,
+  .MuiButton-root:not(.keep-print),
+  .MuiIconButton-root:not(.keep-print),
+  button:not(.keep-print) {
+    display: none !important;
+  }
+  
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
 
+  .MuiPaper-root {
+    box-shadow: none !important;
+    border: none !important;
+  }
 
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+.no-print {
+  display: block;
+}

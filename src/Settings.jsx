@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Card, CardContent, TextField, Button, Grid, 
   Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar,
-  FormControl, InputLabel, Select, MenuItem, Chip
+  FormControl, InputLabel, Select, MenuItem, Chip, Dialog, DialogTitle,
+  DialogContent, DialogContentText, DialogActions
 } from '@mui/material';
 import { Save, Plus, Trash2, Building2, Check } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
@@ -13,7 +14,7 @@ import { useData } from './DataContext';
 const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
   const { mode, primaryColor, updateTheme } = useThemeContext();
-  const { config, reloadConfig } = useConfig();
+  const { config } = useConfig();
   const { addBusiness, updateBusiness, deleteBusiness: deleteBusinessFromData, deleteItem, getItems } = useData();
   const [formData, setFormData] = useState({
     name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
@@ -21,6 +22,7 @@ const SettingsPage = () => {
   });
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [isNew, setIsNew] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, businessId: null, businessName: '' });
 
   // Sync formData with currentBusiness when it changes, unless we are in "isNew" mode
   useEffect(() => {
@@ -43,6 +45,11 @@ const SettingsPage = () => {
     e.preventDefault();
     
     if (isNew) {
+      if (!config.multiBusiness) {
+        setMsg({ type: 'error', text: 'Multiple businesses feature is disabled. Please enable it in the admin panel.' });
+        setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+        return;
+      }
       if (formData.password !== formData.confirmPassword) {
         setMsg({ type: 'error', text: 'Passwords do not match!' });
         return;
@@ -103,67 +110,69 @@ const SettingsPage = () => {
     setTimeout(() => setMsg({ type: '', text: '' }), 4000);
   };
 
-  const handleDeleteBusiness = async (id) => {
+  const handleDeleteBusiness = (id) => {
     const bizToDelete = businesses.find(b => b.id === id);
     if (!bizToDelete) return;
 
     if (businesses.length <= 1) {
-      alert("You need at least one business at all times.");
+      setMsg({ type: 'error', text: 'You need at least one business at all times.' });
+      setTimeout(() => setMsg({ type: '', text: '' }), 4000);
       return;
     }
     
-    const confirmDelete = window.confirm(
-      `EXTREME CAUTION: Deleting "${bizToDelete.name}" will permanently remove ALL associated parties, items, and transactions.\n\nAre you absolutely sure?`
-    );
+    setDeleteConfirm({ open: true, businessId: id, businessName: bizToDelete.name });
+  };
 
-    if (confirmDelete) {
-      try {
-        const otherBusiness = businesses.find(b => b.id !== id);
-        
-        // Delete all related data
-        const parties = getItems('parties').filter(p => p.businessId === id);
-        const items = getItems('items').filter(i => i.businessId === id);
-        const sales = getItems('sales').filter(s => s.businessId === id);
-        const purchases = getItems('purchases').filter(p => p.businessId === id);
-        const expenses = getItems('expenses').filter(e => e.businessId === id);
-        const payments = getItems('payments').filter(p => p.businessId === id);
-        const opticals = getItems('opticals').filter(o => o.businessId === id);
-        
-        // Delete all related data (in parallel for better performance)
-        await Promise.all([
-          ...parties.map(party => deleteItem('parties', party.id)),
-          ...items.map(item => deleteItem('items', item.id)),
-          ...sales.map(sale => deleteItem('sales', sale.id)),
-          ...purchases.map(purchase => deleteItem('purchases', purchase.id)),
-          ...expenses.map(expense => deleteItem('expenses', expense.id)),
-          ...payments.map(payment => deleteItem('payments', payment.id)),
-          ...opticals.map(optical => deleteItem('opticals', optical.id))
-        ]);
+  const confirmDeleteBusiness = async () => {
+    const id = deleteConfirm.businessId;
+    if (!id) return;
 
-        // Delete the business
-        const deleted = await deleteBusinessFromData(id);
-        
-        if (deleted) {
-          if (id === currentBusiness?.id && otherBusiness) {
-            switchBusiness(otherBusiness.id);
-          }
-          setMsg({ type: 'success', text: 'Business and all its data deleted.' });
-        } else {
-          setMsg({ type: 'error', text: 'Failed to delete business. Please try again.' });
+    try {
+      const otherBusiness = businesses.find(b => b.id !== id);
+      
+      // Delete all related data
+      const parties = getItems('parties').filter(p => p.businessId === id);
+      const items = getItems('items').filter(i => i.businessId === id);
+      const sales = getItems('sales').filter(s => s.businessId === id);
+      const purchases = getItems('purchases').filter(p => p.businessId === id);
+      const expenses = getItems('expenses').filter(e => e.businessId === id);
+      const payments = getItems('payments').filter(p => p.businessId === id);
+      const opticals = getItems('opticals').filter(o => o.businessId === id);
+      
+      // Delete all related data (in parallel for better performance)
+      await Promise.all([
+        ...parties.map(party => deleteItem('parties', party.id)),
+        ...items.map(item => deleteItem('items', item.id)),
+        ...sales.map(sale => deleteItem('sales', sale.id)),
+        ...purchases.map(purchase => deleteItem('purchases', purchase.id)),
+        ...expenses.map(expense => deleteItem('expenses', expense.id)),
+        ...payments.map(payment => deleteItem('payments', payment.id)),
+        ...opticals.map(optical => deleteItem('opticals', optical.id))
+      ]);
+
+      // Delete the business
+      const deleted = await deleteBusinessFromData(id);
+      
+      if (deleted) {
+        if (id === currentBusiness?.id && otherBusiness) {
+          switchBusiness(otherBusiness.id);
         }
-      } catch (err) {
-        console.error("Deletion failed:", err);
-        setMsg({ type: 'error', text: 'Deletion failed: ' + (err.message || 'Unknown error') });
+        setMsg({ type: 'success', text: 'Business and all its data deleted.' });
+      } else {
+        setMsg({ type: 'error', text: 'Failed to delete business. Please try again.' });
       }
-      setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+    } catch (err) {
+      console.error("Deletion failed:", err);
+      setMsg({ type: 'error', text: 'Deletion failed: ' + (err.message || 'Unknown error') });
     }
+    setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+    setDeleteConfirm({ open: false, businessId: null, businessName: '' });
   };
 
   return (
     <Box sx={{ maxWidth: 900, mx: 'auto', pb: 8 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>Settings</Typography>
-        <Button variant="outlined" onClick={reloadConfig}>Reload Config</Button>
       </Box>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>Manage your business profiles and application preferences.</Typography>
 
@@ -289,67 +298,70 @@ const SettingsPage = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12} md={5}>
-          <Card elevation={0}>
-            <CardContent sx={{ p: 4 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Multiple Businesses</Typography>
-              <List disablePadding>
-                {businesses.map((biz) => (
-                  <Box key={biz.id} sx={{ mb: 2, border: '1px solid', borderColor: biz.id === currentBusiness?.id ? 'primary.main' : 'divider', borderRadius: 3, overflow: 'hidden' }}>
-                    <ListItem 
-                      sx={{ 
-                        py: 2,
-                        bgcolor: biz.id === currentBusiness?.id ? 'primary.50' : 'transparent',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <ListItemText 
-                        primary={biz.name} 
-                        secondary={biz.gstNumber || 'No GSTIN'}
-                        primaryTypographyProps={{ fontWeight: 600, color: biz.id === currentBusiness?.id ? 'primary.main' : 'text.primary' }}
-                      />
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <IconButton 
-                          size="small" 
-                          color="primary" 
-                          onClick={() => {
-                            setIsNew(false);
-                            switchBusiness(biz.id);
-                          }} 
-                          disabled={biz.id === currentBusiness?.id}
-                          title="Switch to this business"
-                        >
-                          {biz.id === currentBusiness?.id ? <Check size={18} /> : <Save size={18} />}
-                        </IconButton>
-                        <IconButton 
-                          size="small" 
-                          color="error" 
-                          onClick={() => handleDeleteBusiness(biz.id)}
-                          title="Delete business"
-                        >
-                          <Trash2 size={18} />
-                        </IconButton>
-                      </Box>
-                    </ListItem>
-                  </Box>
-                ))}
-              </List>
-              <Button 
-                variant="outlined"
-                fullWidth
-                sx={{ mt: 1, borderStyle: 'dashed', borderWidth: 2 }}
-                startIcon={<Plus size={20} />}
-                onClick={() => {
-                  setFormData({ name: '', gstNumber: '', address: '', phone: '', email: '', state: '' });
-                  setIsNew(true);
-                }}
-              >
-                Add New Business
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
+        {config.multiBusiness && (
+          <Grid item xs={12} md={5}>
+            <Card elevation={0}>
+              <CardContent sx={{ p: 4 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Multiple Businesses</Typography>
+                <List disablePadding>
+                  {businesses.map((biz) => (
+                    <Box key={biz.id} sx={{ mb: 2, border: '1px solid', borderColor: biz.id === currentBusiness?.id ? 'primary.main' : 'divider', borderRadius: 3, overflow: 'hidden' }}>
+                      <ListItem 
+                        sx={{ 
+                          py: 2,
+                          bgcolor: biz.id === currentBusiness?.id ? 'primary.50' : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <ListItemText 
+                          primary={biz.name} 
+                          secondary={biz.gstNumber || 'No GSTIN'}
+                          primaryTypographyProps={{ fontWeight: 600, color: biz.id === currentBusiness?.id ? 'primary.main' : 'text.primary' }}
+                        />
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <IconButton 
+                            size="small" 
+                            color="primary" 
+                            onClick={() => {
+                              setIsNew(false);
+                              switchBusiness(biz.id);
+                            }} 
+                            disabled={biz.id === currentBusiness?.id}
+                            title="Switch to this business"
+                          >
+                            {biz.id === currentBusiness?.id ? <Check size={18} /> : <Save size={18} />}
+                          </IconButton>
+                          <IconButton 
+                            size="small" 
+                            color="error" 
+                            onClick={() => handleDeleteBusiness(biz.id)}
+                            title="Delete business"
+                            disabled={businesses.length <= 1}
+                          >
+                            <Trash2 size={18} />
+                          </IconButton>
+                        </Box>
+                      </ListItem>
+                    </Box>
+                  ))}
+                </List>
+                <Button 
+                  variant="outlined"
+                  fullWidth
+                  sx={{ mt: 1, borderStyle: 'dashed', borderWidth: 2 }}
+                  startIcon={<Plus size={20} />}
+                  onClick={() => {
+                    setFormData({ name: '', gstNumber: '', address: '', phone: '', email: '', state: '' });
+                    setIsNew(true);
+                  }}
+                >
+                  Add New Business
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
       </Grid>
 
       <Box sx={{ mt: 6 }}>
@@ -401,6 +413,26 @@ const SettingsPage = () => {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, businessId: null, businessName: '' })}>
+        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            <strong>EXTREME CAUTION:</strong> Deleting "{deleteConfirm.businessName}" will permanently remove ALL associated parties, items, and transactions.
+            <br /><br />
+            Are you absolutely sure?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirm({ open: false, businessId: null, businessName: '' })}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDeleteBusiness} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

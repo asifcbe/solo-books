@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Box, Button, Card, CardContent, Typography, TextField, Dialog,
   DialogTitle, DialogContent, DialogActions, Grid, MenuItem,
-  InputAdornment, Chip, IconButton
+  InputAdornment, Chip, IconButton, Snackbar, Alert
 } from '@mui/material';
 import { Plus, Edit2, Trash2, Box as BoxIcon } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
@@ -24,6 +24,7 @@ const ItemsPage = () => {
 
   // Filter states for DataGrid
   const [filters, setFilters] = useState({});
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
 
   const items = getItems('items').filter(item => item.businessId === currentBusiness?.id);
 
@@ -43,18 +44,22 @@ const ItemsPage = () => {
 
   const handleClose = () => setOpen(false);
 
+  const showSnackbar = (message, severity = 'error') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate business
     if (!currentBusiness?.id) {
-      alert('Business not selected. Please refresh and try again.');
+      showSnackbar('Business not selected. Please refresh and try again.', 'error');
       return;
     }
 
     // Validate required fields
     if (!formData.name || formData.name.trim() === '') {
-      alert('Please enter an item name');
+      showSnackbar('Please enter an item name', 'warning');
       return;
     }
 
@@ -85,15 +90,16 @@ const ItemsPage = () => {
         );
         
         if (!savedItem) {
-          alert('Failed to save item. Please check your connection and try again.');
+          showSnackbar('Failed to save item. Please check your connection and try again.', 'error');
           return;
         }
       }
       
+      showSnackbar(editingItem ? 'Item updated successfully!' : 'Item added successfully!', 'success');
       handleClose();
     } catch (error) {
       console.error('Error saving item:', error);
-      alert('An error occurred while saving. Please try again.');
+      showSnackbar('An error occurred while saving. Please try again.', 'error');
     }
   };
 
@@ -288,6 +294,22 @@ const ItemsPage = () => {
           </DialogActions>
         </form>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

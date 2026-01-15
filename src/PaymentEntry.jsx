@@ -8,11 +8,14 @@ import {
 import { 
   CheckCircle2, ArrowLeft, Landmark, Banknote, 
   CreditCard, User, Search, 
-  Calendar, FileClock, Wallet, ArrowDownRight, ArrowUpRight
+  Calendar, FileClock, Wallet, ArrowDownRight, ArrowUpRight, Printer, Share2
 } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
 import { useNavigate } from 'react-router-dom';
+import { useReactToPrint } from 'react-to-print';
+import PaymentTemplate from './PaymentTemplate';
+import { useRef } from 'react';
 
 const PaymentEntry = ({ mode = 'payment-in' }) => {
   const theme = useTheme();
@@ -31,6 +34,28 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
     start: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
+  const [printingData, setPrintingData] = useState(null);
+  const printRef = useRef();
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+  });
+
+  const handleShare = (row) => {
+    const text = `*Payment Receipt from ${currentBusiness?.name || 'Solo Books'}*\n\n` +
+      `Amount: ₹${row.totalAmount.toLocaleString()}\n` +
+      `Date: ${row.date}\n` +
+      `Party: ${row.partyName}\n` +
+      `Mode: ${row.paymentMode}\n` +
+      `Ref: ${row.referenceNo}\n\n` +
+      `Shared via Solo Books`;
+    
+    if (navigator.share) {
+      navigator.share({ title: `Payment Receipt ${row.referenceNo}`, text }).catch(e => console.error(e));
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
 
   // Additional filter states
   const [filters, setFilters] = useState({
@@ -170,6 +195,9 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
 
   return (
     <Box sx={{ maxWidth: 1600, mx: 'auto', p: { xs: 2, md: 4 } }}>
+      <div style={{ display: 'none' }}>
+        <PaymentTemplate ref={printRef} data={printingData} business={currentBusiness} />
+      </div>
       
       {/* Header */}
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 4 }}>
@@ -185,43 +213,133 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
           <Tab label="Payment Out (Paid)" sx={{ fontWeight: 700 }} />
         </Tabs>
       </Box>
-{/* BOTTOM: Entry Form */}
-        <Grid item xs={12} sx={{pb:2}}>
-          <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
-            <Box sx={{ px: 4, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>New Payment Entry</Typography>
-            </Box>
-            <CardContent sx={{ p: 4 }}>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={3}>
-                  <TextField select fullWidth label="Party" value={formData.partyId} onChange={(e) => setFormData({ ...formData, partyId: e.target.value })}>
-                    {parties.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-                  </TextField>
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField fullWidth label="Amount" type="number" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} 
-                    InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }} />
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField select fullWidth label="Method" value={formData.paymentMode} onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}>
-                    <MenuItem value="Cash">Cash</MenuItem>
-                    <MenuItem value="Bank">Bank</MenuItem>
-                    <MenuItem value="UPI">UPI</MenuItem>
-                  </TextField>
-                </Grid>
-                <Grid item xs={12} md={2}>
-                  <TextField fullWidth label="Ref No" value={formData.referenceNo} onChange={(e) => setFormData({ ...formData, referenceNo: e.target.value })} />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <Button fullWidth variant="contained" size="large" onClick={handleSave} disabled={!formData.partyId || !formData.amount}
-                    sx={{ height: '56px', borderRadius: 2, fontWeight: 800, bgcolor: accentColor, '&:hover': { bgcolor: accentColor } }} startIcon={<CheckCircle2 />}>
-                    Confirm Transaction
-                  </Button>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
+{/* New Payment Entry Section */}
+<Box sx={{ mb: 4 }}>
+  <Card 
+    elevation={0} 
+    sx={{ 
+      borderRadius: 4, 
+      border: '1px solid', 
+      borderColor: 'divider', 
+      bgcolor: 'background.paper',
+      overflow: 'hidden',
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '4px',
+        bgcolor: accentColor,
+      }
+    }}
+  >
+    <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 800, color: 'text.primary' }}>
+        New Payment Entry
+      </Typography>
+    </Box>
+    <CardContent sx={{ p: 4 }}>
+      <Grid container spacing={3} alignItems="flex-end">
+        <Grid item xs={12} md={3}>
+          <TextField 
+            select 
+            fullWidth 
+            label="Select Party" 
+            variant="outlined"
+            value={formData.partyId} 
+            onChange={(e) => setFormData({ ...formData, partyId: e.target.value })}
+            placeholder="Choose customer/vendor"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <User size={18} color={alpha(accentColor, 0.6)} />
+                </InputAdornment>
+              ),
+            }}
+          >
+            {parties.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+          </TextField>
         </Grid>
+        <Grid item xs={12} md={2}>
+          <TextField 
+            fullWidth 
+            label="Amount" 
+            type="number" 
+            variant="outlined"
+            value={formData.amount} 
+            onChange={(e) => setFormData({ ...formData, amount: e.target.value })} 
+            InputProps={{ 
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Typography variant="body2" color="text.secondary">₹</Typography>
+                </InputAdornment>
+              ) 
+            }} 
+          />
+        </Grid>
+        <Grid item xs={12} md={2}>
+          <TextField 
+            select 
+            fullWidth 
+            label="Method" 
+            variant="outlined"
+            value={formData.paymentMode} 
+            onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Wallet size={18} color={alpha(accentColor, 0.6)} />
+                </InputAdornment>
+              ),
+            }}
+          >
+            <MenuItem value="Cash">Cash</MenuItem>
+            <MenuItem value="Bank">Bank</MenuItem>
+            <MenuItem value="UPI">UPI</MenuItem>
+          </TextField>
+        </Grid>
+        <Grid item xs={12} md={2}>
+          <TextField 
+            fullWidth 
+            label="Reference No" 
+            variant="outlined"
+            placeholder="e.g. TXN12345"
+            value={formData.referenceNo} 
+            onChange={(e) => setFormData({ ...formData, referenceNo: e.target.value })} 
+          />
+        </Grid>
+        <Grid item xs={12} md={3}>
+          <Button 
+            fullWidth 
+            variant="contained" 
+            size="large" 
+            onClick={handleSave} 
+            disabled={!formData.partyId || !formData.amount}
+            sx={{ 
+              height: '54px', 
+              borderRadius: 3,
+              fontWeight: 800,
+              textTransform: 'none',
+              fontSize: '1rem',
+              boxShadow: mode === 'dark' ? `0 8px 16px rgba(0,0,0,0.4)` : `0 8px 16px ${alpha(accentColor, 0.2)}`,
+              background: `linear-gradient(45deg, ${accentColor} 30%, ${alpha(accentColor, 0.8)} 90%)`,
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: mode === 'dark' ? `0 12px 20px rgba(0,0,0,0.5)` : `0 12px 20px ${alpha(accentColor, 0.3)}`,
+                opacity: 0.95,
+              },
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            }} 
+            startIcon={<CheckCircle2 size={20} />}
+          >
+            Confirm Payment
+          </Button>
+        </Grid>
+      </Grid>
+    </CardContent>
+  </Card>
+</Box>
       <Grid container spacing={3}>
         
         {/* TOP LEFT: Grid History */}
@@ -305,10 +423,11 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
               <Table stickyHeader size="small" sx={{ minWidth: 650 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 700, bgcolor: 'background.default' }}>Date</TableCell>
-                    <TableCell sx={{ fontWeight: 700, bgcolor: 'background.default' }}>Party</TableCell>
-                    <TableCell sx={{ fontWeight: 700, bgcolor: 'background.default' }}>Reference</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: 'background.default' }}>Amount</TableCell>
+                    <TableCell sx={{ fontWeight: 800, bgcolor: 'rgba(0,0,0,0.02)', py: 2 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 800, bgcolor: 'rgba(0,0,0,0.02)', py: 2 }}>Party</TableCell>
+                    <TableCell sx={{ fontWeight: 800, bgcolor: 'rgba(0,0,0,0.02)', py: 2 }}>Reference</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'rgba(0,0,0,0.02)', py: 2 }}>Amount</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, bgcolor: 'rgba(0,0,0,0.02)', py: 2 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -320,6 +439,22 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
                       <TableCell sx={{ fontWeight: 600 }}>{row.partyName}</TableCell>
                       <TableCell color="text.secondary">{row.referenceNo}</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 700, color: accentColor }}>₹{row.totalAmount.toLocaleString()}</TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" onClick={() => {
+                          setPrintingData(row);
+                          setTimeout(() => handlePrint(), 100);
+                        }} title="Print Receipt">
+                          <Printer size={16} />
+                        </IconButton>
+                        <IconButton 
+                          size="small" 
+                          sx={{ color: '#25D366' }}
+                          onClick={() => handleShare(row)} 
+                          title="Share on WhatsApp"
+                        >
+                          <Share2 size={16} />
+                        </IconButton>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

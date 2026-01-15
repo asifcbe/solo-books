@@ -6,7 +6,7 @@ import { useAuth } from './AuthContext';
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAuthorized } = useAuth();
   const [data, setData] = useState({
     parties: [],
     items: [],
@@ -24,7 +24,7 @@ export const DataProvider = ({ children }) => {
   const isUpdatingDataRef = useRef(false); // Prevent reload during data updates
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && isAuthorized) {
       loadAllData();
     } else {
       setData({
@@ -40,7 +40,7 @@ export const DataProvider = ({ children }) => {
       setAllBusinessData({});
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, isAuthorized]);
 
   // Listen for business changes from localStorage
   useEffect(() => {
@@ -56,7 +56,7 @@ export const DataProvider = ({ children }) => {
   }, [currentBusinessId, allBusinessData]);
 
   const loadAllData = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !isAuthorized) return;
     try {
       console.log('📂 Loading business data from Firestore...');
       setLoading(true);
@@ -151,8 +151,8 @@ export const DataProvider = ({ children }) => {
   };
 
   const saveAllData = async (businessData) => {
-    if (!currentUser) {
-      console.warn('⚠️ Cannot save: No user logged in');
+    if (!currentUser || !isAuthorized) {
+      console.warn('⚠️ Cannot save: No user logged in or not authorized');
       return false;
     }
     
@@ -398,8 +398,8 @@ export const DataProvider = ({ children }) => {
 
   // Business management methods
   const addBusiness = async (businessData) => {
-    if (!currentUser) {
-      console.error('❌ Cannot add business: No user logged in');
+    if (!currentUser || !isAuthorized) {
+      console.error('❌ Cannot add business: No user logged in or not authorized');
       return false;
     }
 
@@ -451,8 +451,8 @@ export const DataProvider = ({ children }) => {
   };
 
   const updateBusiness = async (businessId, updates) => {
-    if (!currentUser) {
-      console.error('❌ Cannot update business: No user logged in');
+    if (!currentUser || !isAuthorized) {
+      console.error('❌ Cannot update business: No user logged in or not authorized');
       return false;
     }
 
@@ -484,8 +484,8 @@ export const DataProvider = ({ children }) => {
   };
 
   const deleteBusiness = async (businessId) => {
-    if (!currentUser) {
-      console.error('❌ Cannot delete business: No user logged in');
+    if (!currentUser || !isAuthorized) {
+      console.error('❌ Cannot delete business: No user logged in or not authorized');
       return false;
     }
 

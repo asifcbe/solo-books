@@ -58,6 +58,7 @@ const Layout = ({ children }) => {
     ...(config.features?.reports ? [{ text: 'Reports', icon: <FileText size={20} />, path: '/reports' }] : []),
     ...(config.features?.backup ? [{ text: 'Backup/Restore', icon: <Database size={20} />, path: '/backup' }] : []),
     ...(config.features?.settings ? [{ text: 'Settings', icon: <Settings size={20} />, path: '/settings' }] : []),
+    ...(currentUser ? [{ text: 'Admin', icon: <Settings size={20} />, path: '/admin' }] : []),
   ];
 
   const drawer = (
@@ -95,23 +96,25 @@ const Layout = ({ children }) => {
           </ListItem>
         ))}
       </List>
-      <Box sx={{ mt: 'auto', p: 2 }}>
-        <Divider sx={{ mb: 2 }} />
-        <ListItemButton 
-          onClick={handleMenuOpen}
-          sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
-        >
-          <ListItemIcon sx={{ minWidth: 40 }}>
-            <Store size={20} />
-          </ListItemIcon>
-          <ListItemText 
-            primary={currentBusiness?.name || 'Select Business'} 
-            secondary="Switch Business"
-            primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 600, noWrap: true }}
-            secondaryTypographyProps={{ fontSize: '0.75rem' }}
-          />
-        </ListItemButton>
-      </Box>
+      {config.multiBusiness && (
+        <Box sx={{ mt: 'auto', p: 2 }}>
+          <Divider sx={{ mb: 2 }} />
+          <ListItemButton 
+            onClick={handleMenuOpen}
+            sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <Store size={20} />
+            </ListItemIcon>
+            <ListItemText 
+              primary={currentBusiness?.name || 'Select Business'} 
+              secondary="Switch Business"
+              primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 600, noWrap: true }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+          </ListItemButton>
+        </Box>
+      )}
 
       <Menu
         anchorEl={anchorEl}
@@ -132,11 +135,15 @@ const Layout = ({ children }) => {
             {biz.name}
           </MenuItem>
         ))}
-        <Divider />
-        <MenuItem onClick={() => { navigate('/settings'); handleMenuClose(); }}>
-          <ListItemIcon><Plus size={18} /></ListItemIcon>
-          Add New Business
-        </MenuItem>
+        {config.multiBusiness && (
+          <>
+            <Divider />
+            <MenuItem onClick={() => { navigate('/settings'); handleMenuClose(); }}>
+              <ListItemIcon><Plus size={18} /></ListItemIcon>
+              Add New Business
+            </MenuItem>
+          </>
+        )}
       </Menu>
     </Box>
   );

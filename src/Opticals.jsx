@@ -1,74 +1,104 @@
 import React, { useState } from 'react';
 import {
-  Box, Button, Typography, TextField, Grid, IconButton, 
-  Stack, Paper, Divider, Container, alpha, Autocomplete
+  Box, Button, Typography, TextField, Grid, IconButton, InputAdornment,InputBase,
+  Stack, Paper, Divider, Container, alpha, Autocomplete, Alert, Snackbar
 } from '@mui/material';
 import { 
   Save, Edit2, Trash2, ChevronLeft, 
-  Eye, Info, Plus, Calendar, User, Printer, Phone
+  Eye, Info, Plus, Calendar, User, Printer, Phone, Share2
 } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
 import DataGrid from './DataGrid';
+import { useReactToPrint } from 'react-to-print';
+import OpticalTemplate from './OpticalTemplate';
+import { useRef } from 'react';
 
 // --- Elegant Styled Components ---
 
 const ReadingField = ({ label, value, onChange, unit, color }) => (
-  <Box sx={{ flex: 1, textAlign: 'center', minWidth: '60px' }}>
+  <Box sx={{ flex: 1, textAlign: 'center', minWidth: '65px' }}>
     <Typography variant="caption" sx={{ 
       color: 'text.secondary', 
-      fontWeight: 600, 
+      fontWeight: 700, 
       fontSize: '0.65rem', 
       textTransform: 'uppercase',
       letterSpacing: 1,
       mb: 1,
-      display: 'block'
+      display: 'block',
+      opacity: 0.8
     }}>
       {label}
     </Typography>
-    <TextField
-      variant="standard"
-      value={value}
-      onChange={onChange}
-      placeholder="0.00"
-      InputProps={{
-        disableUnderline: true,
-        endAdornment: <Typography sx={{ fontSize: '0.7rem', ml: 0.5, color: alpha(color, 0.5), fontWeight: 700 }}>{unit}</Typography>,
-        sx: {
-          fontSize: '1.2rem',
-          fontWeight: 500,
-          fontFamily: '"Inter", sans-serif',
+    <Box sx={{ 
+      position: 'relative',
+      bgcolor: alpha(color, 0.05),
+      borderRadius: 1.5,
+      border: '1px solid',
+      borderColor: alpha(color, 0.1),
+      transition: 'all 0.2s',
+      '&:focus-within': {
+        borderColor: color,
+        bgcolor: alpha(color, 0.08),
+        transform: 'translateY(-1px)',
+        boxShadow: `0 4px 12px ${alpha(color, 0.15)}`
+      },
+      p: '4px 8px'
+    }}>
+      <InputBase
+        fullWidth
+        value={value}
+        onChange={onChange}
+        placeholder="0.00"
+        sx={{
+          fontSize: '1rem',
+          fontWeight: 700,
           color: color,
-          '& input': { textAlign: 'center', p: 0.5 }
-        }
-      }}
-      sx={{
-        bgcolor: alpha(color, 0.03),
-        borderRadius: 2,
-        transition: 'all 0.2s',
-        '&:hover': { bgcolor: alpha(color, 0.06) },
-        '& .MuiInputBase-root': { px: 1 }
-      }}
-    />
+          '& input': { textAlign: 'center', p: 0 }
+        }}
+      />
+      <Typography sx={{ 
+        position: 'absolute', 
+        right: 4, 
+        bottom: 2, 
+        fontSize: '0.6rem', 
+        color: alpha(color, 0.5), 
+        fontWeight: 800 
+      }}>
+        {unit}
+      </Typography>
+    </Box>
   </Box>
 );
 
-const PrintStyles = () => (
-  <style>{`
-    @media print {
-      body * { visibility: hidden; }
-      #printable-content, #printable-content * { visibility: visible; }
-      #printable-content { position: absolute; left: 0; top: 0; width: 100%; }
-      .no-print { display: none !important; }
-    }
-  `}</style>
-);
 
 const OpticalsPage = () => {
   const { currentBusiness } = useBusiness();
   const { getItems, addItem, updateItem, deleteItem } = useData();
   const [view, setView] = useState('list');
   const [editId, setEditId] = useState(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
+  const [printingData, setPrintingData] = useState(null);
+  const printRef = useRef();
+
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+  });
+
+  const handleShare = (row) => {
+    const text = `*Optical Prescription from ${currentBusiness?.name || 'Solo Books'}*\n\n` +
+      `Patient: ${row.patientName}\n` +
+      `Date: ${row.date}\n` +
+      `R (OD): ${row.rightEye.sphere || '0'} / ${row.rightEye.cylinder || '0'} x ${row.rightEye.axis || '0'}°\n` +
+      `L (OS): ${row.leftEye.sphere || '0'} / ${row.leftEye.cylinder || '0'} x ${row.leftEye.axis || '0'}°\n\n` +
+      `Shared via Solo Books`;
+    
+    if (navigator.share) {
+      navigator.share({ title: `Prescription for ${row.patientName}`, text }).catch(e => console.error(e));
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
   
   const [formData, setFormData] = useState({
     patientName: '',
@@ -88,21 +118,25 @@ const OpticalsPage = () => {
     setFormData(prev => ({ ...prev, [eyeKey]: { ...prev[eyeKey], [field]: value } }));
   };
 
+  const showSnackbar = (message, severity = 'error') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
   const handleSave = async () => {
     // Validate business
     if (!currentBusiness?.id) {
-      alert('Business not selected. Please refresh and try again.');
+      showSnackbar('Business not selected. Please refresh and try again.', 'error');
       return;
     }
 
     // Validate required fields
     if (!formData.patientName || formData.patientName.trim() === '') {
-      alert('Please enter a patient name');
+      showSnackbar('Please enter a patient name', 'warning');
       return;
     }
 
     if (!formData.date) {
-      alert('Please select a date');
+      showSnackbar('Please select a date', 'warning');
       return;
     }
 
@@ -135,143 +169,230 @@ const OpticalsPage = () => {
         );
         
         if (!savedOptical) {
-          alert('Failed to save optical record. Please check your connection and try again.');
+          showSnackbar('Failed to save optical record. Please check your connection and try again.', 'error');
           return;
         }
       }
       
+      showSnackbar(editId ? 'Prescription updated successfully!' : 'Examination saved successfully!', 'success');
       setView('list');
       setEditId(null);
+      setFormData({
+        patientName: '',
+        phone: '',
+        date: new Date().toISOString().split('T')[0],
+        rightEye: { sphere: '', cylinder: '', axis: '', add: '', va: '' },
+        leftEye: { sphere: '', cylinder: '', axis: '', add: '', va: '' },
+        frameType: '',
+        lensType: '',
+        notes: ''
+      });
     } catch (error) {
       console.error('Error saving optical record:', error);
-      alert('An error occurred while saving. Please try again.');
+      showSnackbar('An error occurred while saving. Please try again.', 'error');
     }
   };
 
   if (view === 'create' || view === 'edit') {
     return (
-      <Box sx={{ minHeight: '100vh', bgcolor: '#F8F9FB', p: { xs: 2, md: 6 } }}>
-        <PrintStyles />
-        <Container maxWidth="md" id="printable-content">
+      <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: { xs: 2, md: 4 } }}>
+        <div style={{ display: 'none' }}>
+          <OpticalTemplate ref={printRef} data={formData} business={currentBusiness} />
+        </div>
+        <Container maxWidth="lg">
           
           {/* Header */}
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }} className="no-print">
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
             <Stack direction="row" spacing={2}>
-              <IconButton onClick={() => setView('list')} sx={{ bgcolor: 'white', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <IconButton 
+                onClick={() => { setView('list'); setEditId(null); }} 
+                sx={{ 
+                  bgcolor: 'background.paper', 
+                  boxShadow: 1,
+                  '&:hover': { bgcolor: 'action.hover' }
+                }}
+              >
                 <ChevronLeft size={20} />
               </IconButton>
               <Button 
                 startIcon={<Printer size={18} />}
-                onClick={() => window.print()}
-                sx={{ color: 'text.secondary' }}
+                onClick={() => handlePrint()}
+                variant="outlined"
+                sx={{ borderRadius: 2 }}
               >
                 Print
               </Button>
+              <Button 
+                startIcon={<Share2 size={18} />}
+                onClick={() => handleShare(formData)}
+                variant="outlined"
+                sx={{ borderRadius: 2, color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#128C7E', bgcolor: 'rgba(37, 211, 102, 0.04)' } }}
+              >
+                Share
+              </Button>
             </Stack>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1A1C1E' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>
               {editId ? 'Edit Prescription' : 'New Examination'}
             </Typography>
             <Button 
               variant="contained" 
-              size="small"
+              size="medium"
               disableElevation
               startIcon={<Save size={18} />}
               onClick={handleSave}
-              sx={{ bgcolor: '#1A1C1E', borderRadius: 2, px: 3, '&:hover': { bgcolor: '#000' } }}
+              sx={{ borderRadius: 2, px: 3 }}
             >
               Save
             </Button>
           </Stack>
 
-          <Stack spacing={2}>
+          <Stack spacing={3}>
             {/* Patient Card */}
-            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #E8EAED' }}>
-              <Grid container spacing={2}>
+            <Paper elevation={0} sx={{ p: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2, color: 'text.primary' }}>
+                Patient Information
+              </Typography>
+              <Grid container spacing={3}>
                 <Grid item xs={12} sm={6}>
-                  <Stack direction="row" spacing={2} alignItems="center">
-                      <User size={18} color="#9AA0A6" />
-                      <Autocomplete
-                        freeSolo
-                        options={parties.map((option) => option.name)}
-                        fullWidth
-                        value={formData.patientName}
-                        onChange={(event, newValue) => {
-                          setFormData(prev => ({ ...prev, patientName: newValue }));
-                        }}
-                        onInputChange={(event, newInputValue) => {
-                          setFormData(prev => ({ ...prev, patientName: newInputValue }));
-                        }}
-                        renderInput={(params) => (
-                          <TextField 
-                            {...params} 
-                            variant="standard" 
-                            label="Patient Name" 
-                            InputProps={{ ...params.InputProps, sx: { fontWeight: 600 } }}
-                          />
-                        )}
-                      />
-                    </Stack>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Stack direction="row" spacing={2} alignItems="center">
-                      <Phone size={18} color="#9AA0A6" />
+                  <Autocomplete
+                    freeSolo
+                    options={parties.map((option) => option.name)}
+                    fullWidth
+                    value={formData.patientName}
+                    onChange={(event, newValue) => {
+                      setFormData(prev => ({ ...prev, patientName: newValue || '' }));
+                    }}
+                    onInputChange={(event, newInputValue) => {
+                      setFormData(prev => ({ ...prev, patientName: newInputValue }));
+                    }}
+                    renderInput={(params) => (
                       <TextField 
-                        fullWidth variant="standard" label="Phone Number"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        {...params} 
+                        label="Patient Name" 
+                        required
+                        InputProps={{ 
+                          ...params.InputProps,
+                          startAdornment: <User size={18} style={{ marginRight: 8, color: 'rgba(0,0,0,0.54)' }} />
+                        }}
                       />
-                    </Stack>
+                    )}
+                  />
                 </Grid>
                 <Grid item xs={12} sm={6}>
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Calendar size={18} color="#9AA0A6" />
-                    <TextField 
-                      fullWidth variant="standard" type="date" label="Examination Date"
-                      value={formData.date}
-                      onChange={(e) => setFormData({...formData, date: e.target.value})}
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  </Stack>
+                  <TextField 
+                    fullWidth 
+                    label="Phone Number"
+                    variant="outlined"
+                    value={formData.phone}
+                    placeholder="Enter patient phone"
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Phone size={18} color="rgba(0,0,0,0.54)" />
+                        </InputAdornment>
+                      )
+                    }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField 
+                    fullWidth 
+                    type="date" 
+                    label="Examination Date"
+                    variant="outlined"
+                    value={formData.date}
+                    onChange={(e) => setFormData({...formData, date: e.target.value})}
+                    InputLabelProps={{ shrink: true }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Calendar size={18} color="rgba(0,0,0,0.54)" />
+                        </InputAdornment>
+                      )
+                    }}
+                    required
+                  />
                 </Grid>
               </Grid>
             </Paper>
 
             {/* The Refraction Bridge - Grid Alignment */}
-            <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #E8EAED', overflow: 'hidden' }}>
-              <Box sx={{ p: 1, bgcolor: '#F1F3F4', display: 'flex', justifyContent: 'center' }}>
-                <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: 2, color: '#5F6368' }}>REFRACTION DATA</Typography>
+            <Paper elevation={0} sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+              <Box sx={{ p: 1.5, bgcolor: 'primary.main', display: 'flex', justifyContent: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, letterSpacing: 1.5, color: 'white' }}>
+                  REFRACTION DATA
+                </Typography>
               </Box>
               
-              <Box sx={{ p: 2 }}>
-                <Grid container spacing={2}>
+              <Box sx={{ p: 3 }}>
+                <Grid container spacing={3}>
                   {/* Right Eye Section */}
                   <Grid item xs={12}>
-                    <Paper elevation={0} sx={{ p: 2, bgcolor: alpha('#1967D2', 0.03), borderRadius: 2, border: '1px solid', borderColor: alpha('#1967D2', 0.1) }}>
+                    <Paper 
+                      elevation={0} 
+                      sx={{ 
+                        p: 3, 
+                        bgcolor: alpha('#1976d2', 0.05), 
+                        borderRadius: 2, 
+                        border: '2px solid', 
+                        borderColor: alpha('#1976d2', 0.2) 
+                      }}
+                    >
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1976d2', mb: 2 }}>
+                        Right Eye (OD)
+                      </Typography>
                       <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={1}>
-                          <Typography sx={{ fontWeight: 900, color: '#1967D2', fontSize: '0.9rem' }}>R (OD)</Typography>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Sphere" unit="D" color="#1976d2" value={formData.rightEye.sphere} onChange={(e) => handleEyeDataChange('rightEye', 'sphere', e.target.value)} />
                         </Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Sphere" unit="D" color="#1967D2" value={formData.rightEye.sphere} onChange={(e) => handleEyeDataChange('rightEye', 'sphere', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Cylinder" unit="D" color="#1967D2" value={formData.rightEye.cylinder} onChange={(e) => handleEyeDataChange('rightEye', 'cylinder', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Axis" unit="°" color="#1967D2" value={formData.rightEye.axis} onChange={(e) => handleEyeDataChange('rightEye', 'axis', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Add" unit="D" color="#1967D2" value={formData.rightEye.add} onChange={(e) => handleEyeDataChange('rightEye', 'add', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="VA" unit="" color="#1967D2" value={formData.rightEye.va} onChange={(e) => handleEyeDataChange('rightEye', 'va', e.target.value)} /></Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Cylinder" unit="D" color="#1976d2" value={formData.rightEye.cylinder} onChange={(e) => handleEyeDataChange('rightEye', 'cylinder', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Axis" unit="°" color="#1976d2" value={formData.rightEye.axis} onChange={(e) => handleEyeDataChange('rightEye', 'axis', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Add" unit="D" color="#1976d2" value={formData.rightEye.add} onChange={(e) => handleEyeDataChange('rightEye', 'add', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="VA" unit="" color="#1976d2" value={formData.rightEye.va} onChange={(e) => handleEyeDataChange('rightEye', 'va', e.target.value)} />
+                        </Grid>
                       </Grid>
                     </Paper>
                   </Grid>
 
                   {/* Left Eye Section */}
                   <Grid item xs={12}>
-                    <Paper elevation={0} sx={{ p: 2, bgcolor: alpha('#D93025', 0.03), borderRadius: 2, border: '1px solid', borderColor: alpha('#D93025', 0.1) }}>
+                    <Paper 
+                      elevation={0} 
+                      sx={{ 
+                        p: 3, 
+                        bgcolor: alpha('#dc004e', 0.05), 
+                        borderRadius: 2, 
+                        border: '2px solid', 
+                        borderColor: alpha('#dc004e', 0.2) 
+                      }}
+                    >
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#dc004e', mb: 2 }}>
+                        Left Eye (OS)
+                      </Typography>
                       <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={1}>
-                          <Typography sx={{ fontWeight: 900, color: '#D93025', fontSize: '0.9rem' }}>L (OS)</Typography>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Sphere" unit="D" color="#dc004e" value={formData.leftEye.sphere} onChange={(e) => handleEyeDataChange('leftEye', 'sphere', e.target.value)} />
                         </Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Sphere" unit="D" color="#D93025" value={formData.leftEye.sphere} onChange={(e) => handleEyeDataChange('leftEye', 'sphere', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Cylinder" unit="D" color="#D93025" value={formData.leftEye.cylinder} onChange={(e) => handleEyeDataChange('leftEye', 'cylinder', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Axis" unit="°" color="#D93025" value={formData.leftEye.axis} onChange={(e) => handleEyeDataChange('leftEye', 'axis', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="Add" unit="D" color="#D93025" value={formData.leftEye.add} onChange={(e) => handleEyeDataChange('leftEye', 'add', e.target.value)} /></Grid>
-                        <Grid item xs={12} md={2}><ReadingField label="VA" unit="" color="#D93025" value={formData.leftEye.va} onChange={(e) => handleEyeDataChange('leftEye', 'va', e.target.value)} /></Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Cylinder" unit="D" color="#dc004e" value={formData.leftEye.cylinder} onChange={(e) => handleEyeDataChange('leftEye', 'cylinder', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Axis" unit="°" color="#dc004e" value={formData.leftEye.axis} onChange={(e) => handleEyeDataChange('leftEye', 'axis', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="Add" unit="D" color="#dc004e" value={formData.leftEye.add} onChange={(e) => handleEyeDataChange('leftEye', 'add', e.target.value)} />
+                        </Grid>
+                        <Grid item xs={6} sm={4} md={2.4}>
+                          <ReadingField label="VA" unit="" color="#dc004e" value={formData.leftEye.va} onChange={(e) => handleEyeDataChange('leftEye', 'va', e.target.value)} />
+                        </Grid>
                       </Grid>
                     </Paper>
                   </Grid>
@@ -280,28 +401,64 @@ const OpticalsPage = () => {
             </Paper>
 
             {/* Notes & Specs */}
-            <Grid container spacing={2}>
+            <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
-                <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #E8EAED', height: '100%' }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Plus size={16} /> Product Recommendations
+                <Paper elevation={0} sx={{ p: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
+                  <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Plus size={18} /> Product Recommendations
                   </Typography>
-                  <Stack spacing={1}>
-                    <TextField fullWidth size="small" label="Frame" value={formData.frameType} onChange={(e) => setFormData({...formData, frameType: e.target.value})} />
-                    <TextField fullWidth size="small" label="Lenses" value={formData.lensType} onChange={(e) => setFormData({...formData, lensType: e.target.value})} />
+                  <Stack spacing={2}>
+                    <TextField 
+                      fullWidth 
+                      label="Frame Type" 
+                      value={formData.frameType} 
+                      onChange={(e) => setFormData({...formData, frameType: e.target.value})} 
+                      placeholder="e.g., Full Frame, Half Frame"
+                    />
+                    <TextField 
+                      fullWidth 
+                      label="Lens Type" 
+                      value={formData.lensType} 
+                      onChange={(e) => setFormData({...formData, lensType: e.target.value})} 
+                      placeholder="e.g., Progressive, Bifocal"
+                    />
                   </Stack>
                 </Paper>
               </Grid>
               <Grid item xs={12} md={6}>
-                <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #E8EAED' }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Info size={16} /> Clinical Notes
+                <Paper elevation={0} sx={{ p: 3, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+                  <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Info size={18} /> Clinical Notes
                   </Typography>
-                  <TextField fullWidth multiline rows={2} placeholder="Additional observations..." value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
+                  <TextField 
+                    fullWidth 
+                    multiline 
+                    rows={4} 
+                    placeholder="Additional observations, recommendations, or notes..." 
+                    value={formData.notes} 
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})} 
+                  />
                 </Paper>
               </Grid>
             </Grid>
           </Stack>
+
+          {/* Snackbar for notifications */}
+          <Snackbar
+            open={snackbar.open}
+            autoHideDuration={6000}
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          >
+            <Alert 
+              onClose={() => setSnackbar({ ...snackbar, open: false })} 
+              severity={snackbar.severity}
+              variant="filled"
+              sx={{ width: '100%' }}
+            >
+              {snackbar.message}
+            </Alert>
+          </Snackbar>
         </Container>
       </Box>
     );
@@ -309,6 +466,9 @@ const OpticalsPage = () => {
 
   return (
     <Box sx={{ p: 4, maxWidth: 1100, mx: 'auto' }}>
+      <div style={{ display: 'none' }}>
+        <OpticalTemplate ref={printRef} data={printingData} business={currentBusiness} />
+      </div>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>Optical Records</Typography>
         <Button 
@@ -333,6 +493,25 @@ const OpticalsPage = () => {
         ]} 
         actions={(row) => (
           <Stack direction="row" spacing={1}>
+            <IconButton 
+              size="small" 
+              color="primary"
+              onClick={() => {
+                setPrintingData(row);
+                setTimeout(() => handlePrint(), 100);
+              }}
+              title="Print"
+            >
+              <Printer size={18} />
+            </IconButton>
+            <IconButton 
+              size="small" 
+              sx={{ color: '#25D366' }}
+              onClick={() => handleShare(row)}
+              title="Share on WhatsApp"
+            >
+              <Share2 size={18} />
+            </IconButton>
             <IconButton size="small" onClick={() => { setEditId(row.id); setFormData(row); setView('edit'); }}><Edit2 size={18} /></IconButton>
             <IconButton size="small" color="error" onClick={() => deleteItem('opticals', row.id)}><Trash2 size={18} /></IconButton>
           </Stack>

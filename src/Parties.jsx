@@ -3,7 +3,8 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Dialog, 
   DialogTitle, DialogContent, DialogActions, Grid, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, 
-  Tabs, Tab, Chip, InputAdornment, MenuItem, Autocomplete, TablePagination
+  Tabs, Tab, Chip, InputAdornment, MenuItem, Autocomplete, TablePagination,
+  Snackbar, Alert
 } from '@mui/material';
 import { Plus, Search, Edit2, Trash2, Phone, MapPin, Calculator } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
@@ -33,6 +34,7 @@ const PartiesPage = () => {
   // Pagination states
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
 
   const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
 
@@ -91,18 +93,22 @@ const PartiesPage = () => {
 
   const handleClose = () => setOpen(false);
 
+  const showSnackbar = (message, severity = 'error') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Validate business
     if (!currentBusiness?.id) {
-      alert('Business not selected. Please refresh and try again.');
+      showSnackbar('Business not selected. Please refresh and try again.', 'error');
       return;
     }
 
     // Validate required fields
     if (!formData.name || formData.name.trim() === '') {
-      alert('Please enter a party name');
+      showSnackbar('Please enter a party name', 'warning');
       return;
     }
 
@@ -130,21 +136,24 @@ const PartiesPage = () => {
         );
         
         if (!savedParty) {
-          alert('Failed to save party. Please check your connection and try again.');
+          showSnackbar('Failed to save party. Please check your connection and try again.', 'error');
           return;
         }
       }
       
+      showSnackbar(editingParty ? 'Party updated successfully!' : 'Party added successfully!', 'success');
       handleClose();
     } catch (error) {
       console.error('Error saving party:', error);
-      alert('An error occurred while saving. Please try again.');
+      showSnackbar('An error occurred while saving. Please try again.', 'error');
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this party?')) {
-      deleteItem('parties', id);
+    const party = parties.find(p => p.id === id);
+    if (party && window.confirm(`Are you sure you want to delete "${party.name}"?`)) {
+      await deleteItem('parties', id);
+      showSnackbar('Party deleted successfully!', 'success');
     }
   };
 
@@ -403,6 +412,22 @@ const PartiesPage = () => {
           </DialogActions>
         </form>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

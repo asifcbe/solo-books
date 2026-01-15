@@ -3,9 +3,9 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Grid, 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
   Paper, IconButton, MenuItem, Divider, Autocomplete, InputAdornment, Chip,
-  TablePagination, FormControlLabel, Switch
+  TablePagination, FormControlLabel, Switch, alpha
 } from '@mui/material';
-import { Plus, Trash2, Printer, Save, ChevronLeft, Receipt, ShoppingBasket, Edit } from 'lucide-react';
+import { Plus, Trash2, Printer, Save, ChevronLeft, Receipt, ShoppingBasket, Edit, Share2, Calendar, User, Phone } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
 import { useReactToPrint } from 'react-to-print';
@@ -426,6 +426,21 @@ const SalesPage = ({ mode = 'sales' }) => {
     setTimeout(() => handlePrint(), 100);
   };
 
+  const handleShare = tx => {
+    const text = `*Invoice from ${currentBusiness?.name || 'Solo Books'}*\n\n` +
+      `Invoice #: ${tx.invoiceNumber}\n` +
+      `Date: ${tx.date}\n` +
+      `Party: ${tx.partyName}\n` +
+      `Total: ₹${tx.totalAmount.toFixed(2)}\n\n` +
+      `Shared via Solo Books`;
+    
+    if (navigator.share) {
+      navigator.share({ title: `Invoice ${tx.invoiceNumber}`, text }).catch(e => console.error(e));
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
   // RENDER CREATE/EDIT VIEW
   if (view === 'create' || view === 'edit') {
     return (
@@ -435,9 +450,18 @@ const SalesPage = ({ mode = 'sales' }) => {
             variant="outlined"
             onClick={() => setView('list')}
             startIcon={<ChevronLeft size={18} />}
-            sx={{ borderRadius: 3 }}
+            sx={{ 
+              borderRadius: 2.5,
+              px: 2,
+              borderColor: 'divider',
+              color: 'text.secondary',
+              '&:hover': {
+                borderColor: 'primary.main',
+                bgcolor: 'primary.50'
+              }
+            }}
           >
-            Back to List
+            Back
           </Button>
           <Typography variant="h5" sx={{ fontWeight: 800 }}>
             {view === 'edit' ? 'Edit ' : 'New '}
@@ -445,14 +469,33 @@ const SalesPage = ({ mode = 'sales' }) => {
           </Typography>
         </Box>
 
-        <Grid container spacing={3}>
+        <Grid container spacing={3} alignItems="flex-start">
           <Grid item xs={12} md={8}>
             <Card
               elevation={0}
-              sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}
+              sx={{ 
+                mb: 3, 
+                border: '1px solid', 
+                borderColor: 'divider',
+                borderRadius: 4,
+                overflow: 'hidden',
+                position: 'relative',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '4px',
+                  bgcolor: 'primary.main',
+                }
+              }}
             >
-              <CardContent sx={{ p: 3 }}>
-                <Grid container spacing={2.5}>
+              <CardContent sx={{ p: 4 }}>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'text.secondary' }}>
+                  Transaction Details
+                </Typography>
+                <Grid container spacing={3}>
                   <Grid item xs={12} sm={6}>
                     <Autocomplete
                       options={parties}
@@ -464,6 +507,15 @@ const SalesPage = ({ mode = 'sales' }) => {
                           {...params}
                           label={isSale ? 'Customer' : 'Vendor'}
                           required
+                          placeholder="Select a party"
+                          InputProps={{
+                            ...params.InputProps,
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <User size={20} color={alpha('#4f46e5', 0.5)} />
+                              </InputAdornment>
+                            ),
+                          }}
                         />
                       )}
                     />
@@ -474,6 +526,13 @@ const SalesPage = ({ mode = 'sales' }) => {
                       label={isSale ? 'Invoice #' : 'Bill #'}
                       value={invoiceNumber}
                       onChange={e => setInvoiceNumber(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Receipt size={18} color={alpha('#4f46e5', 0.6)} />
+                          </InputAdornment>
+                        ),
+                      }}
                     />
                   </Grid>
                   <Grid item xs={6} sm={3}>
@@ -484,6 +543,13 @@ const SalesPage = ({ mode = 'sales' }) => {
                       value={invoiceDate}
                       onChange={e => setInvoiceDate(e.target.value)}
                       InputLabelProps={{ shrink: true }}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Calendar size={18} color={alpha('#4f46e5', 0.6)} />
+                          </InputAdornment>
+                        ),
+                      }}
                     />
                   </Grid>
                 </Grid>
@@ -524,24 +590,30 @@ const SalesPage = ({ mode = 'sales' }) => {
 
             <Card
               elevation={0}
-              sx={{ border: '1px solid', borderColor: 'divider' }}
+              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden' }}
             >
+              <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'rgba(0,0,0,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'text.secondary' }}>
+                  Items & Quantities
+                </Typography>
+                <Chip label={`${items.length} Items`} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+              </Box>
               <CardContent sx={{ p: 0 }}>
                 <TableContainer>
                   <Table size="small">
-                    <TableHead sx={{ bgcolor: 'background.default' }}>
+                    <TableHead sx={{ bgcolor: 'rgba(0,0,0,0.03)' }}>
                       <TableRow>
-                        <TableCell sx={{ pl: 3 }}>Item Details</TableCell>
-                        <TableCell width={80} align="center">
+                        <TableCell sx={{ pl: 3, fontWeight: 700 }}>Item Details</TableCell>
+                        <TableCell width={80} align="center" sx={{ fontWeight: 700 }}>
                           Qty
                         </TableCell>
-                        <TableCell width={120} align="right">
+                        <TableCell width={120} align="right" sx={{ fontWeight: 700 }}>
                           Price
                         </TableCell>
-                        <TableCell width={100} align="center">
+                        <TableCell width={100} align="center" sx={{ fontWeight: 700 }}>
                           GST %
                         </TableCell>
-                        <TableCell width={120} align="right" sx={{ pr: 3 }}>
+                        <TableCell width={140} align="right" sx={{ pr: 3, fontWeight: 700 }}>
                           Total
                         </TableCell>
                         <TableCell width={50}></TableCell>
@@ -566,7 +638,8 @@ const SalesPage = ({ mode = 'sales' }) => {
                                 <TextField
                                   {...params}
                                   placeholder="Select Product"
-                                  variant="standard"
+                                  variant="outlined"
+                                  size="small"
                                 />
                               )}
                             />
@@ -575,7 +648,7 @@ const SalesPage = ({ mode = 'sales' }) => {
                             <TextField
                               type="number"
                               size="small"
-                              variant="standard"
+                              variant="outlined"
                               value={item.qty}
                               onChange={e =>
                                 updateItemRow(
@@ -584,13 +657,14 @@ const SalesPage = ({ mode = 'sales' }) => {
                                   Number(e.target.value)
                                 )
                               }
+                              inputProps={{ style: { textAlign: 'center' } }}
                             />
                           </TableCell>
                           <TableCell align="right">
                             <TextField
                               type="number"
                               size="small"
-                              variant="standard"
+                              variant="outlined"
                               value={item.price}
                               onChange={e =>
                                 updateItemRow(
@@ -601,14 +675,12 @@ const SalesPage = ({ mode = 'sales' }) => {
                               }
                               InputProps={{
                                 startAdornment: (
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ mr: 0.5 }}
-                                  >
-                                    ₹
-                                  </Typography>
+                                  <InputAdornment position="start">
+                                    <Typography variant="body2" color="text.secondary">₹</Typography>
+                                  </InputAdornment>
                                 ),
                               }}
+                              inputProps={{ style: { textAlign: 'right' } }}
                             />
                           </TableCell>
                           <TableCell align="center">
@@ -642,8 +714,17 @@ const SalesPage = ({ mode = 'sales' }) => {
                   <Button
                     startIcon={<Plus size={18} />}
                     onClick={addItemRow}
-                    variant="text"
-                    sx={{ fontWeight: 600 }}
+                    variant="outlined"
+                    sx={{ 
+                      fontWeight: 700,
+                      borderRadius: 2.5,
+                      borderColor: 'primary.main',
+                      color: 'primary.main',
+                      '&:hover': {
+                        bgcolor: alpha('#4f46e5', 0.05),
+                        borderColor: 'primary.dark',
+                      }
+                    }}
                   >
                     Add Another Item
                   </Button>
@@ -659,8 +740,18 @@ const SalesPage = ({ mode = 'sales' }) => {
                 position: 'sticky',
                 top: 24,
                 border: '1px solid',
-                borderColor: 'primary.light',
-                bgcolor: 'primary.50',
+                borderColor: 'primary.main',
+                bgcolor: mode === 'dark' ? 'rgba(79, 70, 229, 0.05)' : 'rgba(79, 70, 229, 0.02)',
+                overflow: 'hidden',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '4px',
+                  bgcolor: 'primary.main',
+                }
               }}
             >
               <CardContent sx={{ p: 3 }}>
@@ -729,7 +820,21 @@ const SalesPage = ({ mode = 'sales' }) => {
                   startIcon={<Save size={20} />}
                   onClick={handleSave}
                   disabled={isSaving}
-                  sx={{ borderRadius: 3, py: 1.5 }}
+                  sx={{ 
+                    borderRadius: 3, 
+                    py: 1.8,
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    fontSize: '1.1rem',
+                    boxShadow: mode === 'dark' ? '0 8px 16px rgba(0,0,0,0.4)' : '0 8px 16px rgba(79, 70, 229, 0.2)',
+                    background: `linear-gradient(45deg, #4f46e5 30%, #6366f1 90%)`,
+                    '&:hover': {
+                      background: `linear-gradient(45deg, #4338ca 30%, #4f46e5 90%)`,
+                      transform: 'translateY(-2px)',
+                      boxShadow: mode === 'dark' ? '0 12px 20px rgba(0,0,0,0.5)' : '0 12px 20px rgba(79, 70, 229, 0.3)',
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
                 >
                   {isSaving
                     ? 'Saving...'
@@ -1001,6 +1106,14 @@ const SalesPage = ({ mode = 'sales' }) => {
                         title="Print"
                       >
                         <Printer size={18} />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        sx={{ color: '#25D366' }}
+                        onClick={() => handleShare(tx)}
+                        title="Share on WhatsApp"
+                      >
+                        <Share2 size={18} />
                       </IconButton>
                       <IconButton
                         size="small"
