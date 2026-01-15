@@ -93,13 +93,53 @@ const PartiesPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const partyData = { ...formData, businessId: currentBusiness.id };
-    if (editingParty) {
-      updateItem('parties', editingParty.id, partyData);
-    } else {
-      addItem('parties', partyData);
+    
+    // Validate business
+    if (!currentBusiness?.id) {
+      alert('Business not selected. Please refresh and try again.');
+      return;
     }
-    handleClose();
+
+    // Validate required fields
+    if (!formData.name || formData.name.trim() === '') {
+      alert('Please enter a party name');
+      return;
+    }
+
+    try {
+      const partyData = { 
+        ...formData, 
+        businessId: currentBusiness.id,
+        name: formData.name.trim(),
+        balance: Number(formData.balance) || 0
+      };
+      
+      let saved;
+      if (editingParty) {
+        saved = await updateItem('parties', editingParty.id, partyData);
+      } else {
+        saved = await addItem('parties', partyData);
+      }
+      
+      if (!saved) {
+        // Check if item was actually saved despite return value
+        const savedParty = getItems('parties').find(p => 
+          p.name === partyData.name && 
+          p.businessId === partyData.businessId &&
+          (!editingParty || p.id === editingParty.id)
+        );
+        
+        if (!savedParty) {
+          alert('Failed to save party. Please check your connection and try again.');
+          return;
+        }
+      }
+      
+      handleClose();
+    } catch (error) {
+      console.error('Error saving party:', error);
+      alert('An error occurred while saving. Please try again.');
+    }
   };
 
   const handleDelete = async (id) => {

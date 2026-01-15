@@ -15,6 +15,7 @@ const SalesPage = ({ mode = 'sales' }) => {
   const isSale = mode === 'sales';
   const { currentBusiness } = useBusiness();
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
+
   const [view, setView] = useState('list'); // 'list' or 'create' or 'edit'
   const [editId, setEditId] = useState(null);
   const [selectedParty, setSelectedParty] = useState(null);
@@ -25,6 +26,11 @@ const SalesPage = ({ mode = 'sales' }) => {
   const [noGST, setNoGST] = useState(false);
   const [printingTx, setPrintingTx] = useState(null);
   const printRef = useRef();
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  // NEW: ref to prevent multiple saves
+  const savingRef = useRef(false);
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -46,32 +52,41 @@ const SalesPage = ({ mode = 'sales' }) => {
   });
 
   // Queries
-  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id && p.type === (isSale ? 'Customer' : 'Vendor'));
+  const parties = getItems('parties').filter(
+    p =>
+      p.businessId === currentBusiness?.id &&
+      p.type === (isSale ? 'Customer' : 'Vendor')
+  );
 
-  const stockItems = getItems('items').filter(item => item.businessId === currentBusiness?.id);
-  
-  const transactions = getItems('transactions')
-    .filter(tx => tx.businessId === currentBusiness?.id && tx.type === (isSale ? 'Sales' : 'Purchases'))
+  const stockItems = getItems('items').filter(
+    item => item.businessId === currentBusiness?.id
+  );
+
+  const tableName = isSale ? 'sales' : 'purchases';
+  const transactions = getItems(tableName)
+    .filter(tx => tx.businessId === currentBusiness?.id)
     .filter(tx => {
       // Date range filter
       if (filters.dateFrom && new Date(tx.date) < new Date(filters.dateFrom)) return false;
       if (filters.dateTo && new Date(tx.date) > new Date(filters.dateTo)) return false;
-      
+
       // Party filter
       if (filters.partyId && tx.partyId !== filters.partyId) return false;
-      
+
       // Amount range filter
       if (filters.minAmount && tx.totalAmount < parseFloat(filters.minAmount)) return false;
       if (filters.maxAmount && tx.totalAmount > parseFloat(filters.maxAmount)) return false;
-      
+
       // Status filter
       if (filters.status !== 'all' && tx.status !== filters.status) return false;
-      
+
       return true;
     })
     .reverse();
+
   useEffect(() => {
-    if (view === 'create') {
+    // Only reset form when switching to create view AND not currently saving
+    if (view === 'create' && !savingRef.current && !isSaving) {
       const prefix = isSale ? 'INV' : 'BILL';
       setInvoiceNumber(`${prefix}-${Date.now().toString().slice(-6)}`);
       setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
@@ -81,7 +96,7 @@ const SalesPage = ({ mode = 'sales' }) => {
       setNoGST(false);
       setEditId(null);
     }
-  }, [view, isSale]);
+  }, [view, isSale, isSaving]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -90,18 +105,25 @@ const SalesPage = ({ mode = 'sales' }) => {
 
   // Logic Handlers
   const addItemRow = () => {
-    setItems([...items, { itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+    setItems([
+      ...items,
+      { itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 },
+    ]);
   };
 
-  const removeItemRow = (index) => {
+  const removeItemRow = index => {
     const newItems = items.filter((_, i) => i !== index);
-    setItems(newItems.length ? newItems : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+    setItems(
+      newItems.length
+        ? newItems
+        : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]
+    );
   };
 
   const updateItemRow = (index, field, value) => {
     const newItems = [...items];
     const item = { ...newItems[index], [field]: value };
-    
+
     if (field === 'itemId') {
       const selected = stockItems.find(i => i.id === value);
       if (selected) {
@@ -116,87 +138,249 @@ const SalesPage = ({ mode = 'sales' }) => {
     setItems(newItems);
   };
 
-  const calculateSubtotal = () => items.reduce((sum, item) => sum + (item.qty * item.price), 0);
-  const calculateTax = () => items.reduce((sum, item) => sum + (item.qty * item.price * (item.taxRate / 100)), 0);
+  const calculateSubtotal = () =>
+    items.reduce((sum, item) => sum + item.qty * item.price, 0);
+
+  const calculateTax = () => {
+    if (noGST) return 0;
+    return items.reduce(
+      (sum, item) => sum + item.qty * item.price * (item.taxRate / 100),
+      0
+    );
+  };
+
   const calculateTotal = () => calculateSubtotal() + calculateTax();
 
   const handleSave = async () => {
-    if (!selectedParty) return alert('Please select a party');
-    
-    const finalTaxAmount = noGST ? 0 : calculateTax();
-    const finalTotalAmount = calculateSubtotal() + finalTaxAmount;
-    
-    const transactionData = {
-      businessId: currentBusiness.id,
-      partyId: selectedParty.id,
-      partyName: selectedParty.name,
-      type: isSale ? 'Sales' : 'Purchases',
-      date: invoiceDate,
-      invoiceNumber,
-      items: items.filter(i => i.name).map(item => ({
-        ...item,
-        taxRate: noGST ? 0 : item.taxRate
-      })),
-      description,
-      noGST,
-      subtotal: calculateSubtotal(),
-      taxAmount: finalTaxAmount,
-      totalAmount: finalTotalAmount,
-    };
+    // Prevent multiple simultaneous saves using ref
+    if (savingRef.current) {
+      console.log('⚠️ Save already in progress, ignoring duplicate call');
+      return;
+    }
+    savingRef.current = true;
+    setIsSaving(true);
 
-    if (editId) {
-      const oldTx = getItems('transactions').find(t => t.id === editId);
-      if (oldTx) {
-        // Rollback old effects
-        const oldBalanceRollback = isSale ? -oldTx.totalAmount : oldTx.totalAmount;
-        const oldParty = getItems('parties').find(p => p.id === oldTx.partyId);
-        if(oldParty) updateItem('parties', oldTx.partyId, { balance: oldParty.balance + oldBalanceRollback });
+    try {
+      // CAPTURE ALL DATA AT THE BEGINNING to prevent race conditions
+      const currentSelectedParty = selectedParty;
+      const currentInvoiceDate = invoiceDate;
+      const currentInvoiceNumber = invoiceNumber;
+      const currentItems = [...items];
+      const currentDescription = description;
+      const currentNoGST = noGST;
+      const currentEditId = editId;
+      const currentIsSale = isSale;
+      const currentBusinessId = currentBusiness?.id;
 
-        for (const item of oldTx.items) {
-          if (item.itemId) {
-            const stockItem = getItems('items').find(i => i.id === item.itemId);
-            if (stockItem) {
-              const stockRollback = isSale ? item.qty : -item.qty;
-              updateItem('items', item.itemId, { stock: stockItem.stock + stockRollback });
+      // Validate business ID
+      if (!currentBusinessId) {
+        alert('Business not selected. Please refresh and try again.');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Validate party selection
+      if (!currentSelectedParty || !currentSelectedParty.id) {
+        alert('Please select a party');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Validate invoice number
+      if (!currentInvoiceNumber || currentInvoiceNumber.trim() === '') {
+        alert('Please enter an invoice/bill number');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Validate date
+      if (!currentInvoiceDate) {
+        alert('Please select a date');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Prepare transaction data with captured values
+      const finalSubtotal = currentItems.reduce((sum, item) => sum + item.qty * item.price, 0);
+      const finalTaxAmount = currentNoGST ? 0 : currentItems.reduce(
+        (sum, item) => sum + item.qty * item.price * (item.taxRate / 100),
+        0
+      );
+      const finalTotalAmount = finalSubtotal + finalTaxAmount;
+
+      // stricter: only keep items which have an itemId and positive qty
+      const cleanedItems = currentItems
+        .filter(i => i.itemId && i.qty > 0 && i.price >= 0)
+        .map(item => ({
+          ...item,
+          taxRate: currentNoGST ? 0 : item.taxRate,
+        }));
+
+      // Validate items
+      if (!cleanedItems.length) {
+        alert('Please add at least one item with valid quantity and price');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Additional validation: ensure total amount is positive
+      if (finalTotalAmount <= 0) {
+        alert('Total amount must be greater than zero');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      const transactionData = {
+        businessId: currentBusinessId,
+        partyId: currentSelectedParty.id,
+        partyName: currentSelectedParty.name || 'Unknown',
+        type: currentIsSale ? 'Sales' : 'Purchases',
+        date: currentInvoiceDate,
+        invoiceNumber: currentInvoiceNumber.trim(),
+        items: cleanedItems,
+        description: currentDescription || '',
+        noGST: currentNoGST,
+        subtotal: finalSubtotal,
+        taxAmount: finalTaxAmount,
+        totalAmount: finalTotalAmount,
+      };
+
+      // Validate transaction data before saving
+      if (!transactionData.partyId || !transactionData.items || transactionData.items.length === 0) {
+        console.error('❌ Invalid transaction data:', transactionData);
+        alert('Invalid transaction data. Please check all fields and try again.');
+        savingRef.current = false;
+        setIsSaving(false);
+        return;
+      }
+
+      // Get current data state for rollback calculations
+      const currentData = data;
+      const currentParties = getItems('parties');
+      const currentStockItems = getItems('items');
+
+      if (currentEditId) {
+        const tableName = currentIsSale ? 'sales' : 'purchases';
+        const oldTx = currentData[tableName]?.find(t => t.id === currentEditId);
+        if (oldTx) {
+          // Rollback old effects
+          const oldBalanceRollback = currentIsSale
+            ? -oldTx.totalAmount
+            : oldTx.totalAmount;
+          const oldParty = currentParties.find(p => p.id === oldTx.partyId);
+          if (oldParty) {
+            await updateItem('parties', oldTx.partyId, {
+              balance: oldParty.balance + oldBalanceRollback,
+            });
+          }
+
+          for (const item of oldTx.items) {
+            if (item.itemId) {
+              const stockItem = currentStockItems.find(i => i.id === item.itemId);
+              if (stockItem) {
+                const stockRollback = currentIsSale ? item.qty : -item.qty;
+                await updateItem('items', item.itemId, {
+                  stock: stockItem.stock + stockRollback,
+                });
+              }
             }
           }
         }
       }
-    }
 
-    if (editId) {
-      updateItem('transactions', editId, transactionData);
-    } else {
-      addItem('transactions', transactionData);
-    }
-    // Apply new effects
-    const balanceChange = isSale ? transactionData.totalAmount : -transactionData.totalAmount;
-    const newParty = getItems('parties').find(p => p.id === selectedParty.id);
-    if(newParty) updateItem('parties', selectedParty.id, { balance: newParty.balance + balanceChange });
+      // Save the transaction
+      const tableName = currentIsSale ? 'sales' : 'purchases';
+      let saved;
+      if (currentEditId) {
+        saved = await updateItem(tableName, currentEditId, transactionData);
+      } else {
+        saved = await addItem(tableName, transactionData);
+      }
 
-    for (const item of transactionData.items) {
-      if (item.itemId) {
-        const stockItem = getItems('items').find(i => i.id === item.itemId);
-        if (stockItem) {
-          const stockChange = isSale ? -item.qty : item.qty;
-          updateItem('items', item.itemId, { stock: stockItem.stock + stockChange });
+      if (!saved) {
+        console.error('❌ Save returned false, but checking if data was actually saved...');
+        // Even if save returns false, the data might have been saved
+        // Check if the item exists in the data
+        const tableName = currentIsSale ? 'sales' : 'purchases';
+        const savedItem = getItems(tableName).find(t => 
+          t.invoiceNumber === transactionData.invoiceNumber && 
+          t.partyId === transactionData.partyId
+        );
+        
+        if (!savedItem) {
+          alert(
+            'Failed to save transaction. Please check your connection and try again.'
+          );
+          savingRef.current = false;
+          setIsSaving(false);
+          return;
+        } else {
+          console.log('✅ Transaction was saved despite return value');
+          // Continue with the flow
         }
       }
+
+      // Apply new effects
+      const balanceChange = currentIsSale
+        ? transactionData.totalAmount
+        : -transactionData.totalAmount;
+      const newParty = currentParties.find(
+        p => p.id === currentSelectedParty.id
+      );
+      if (newParty) {
+        await updateItem('parties', currentSelectedParty.id, {
+          balance: newParty.balance + balanceChange,
+        });
+      }
+
+      for (const item of transactionData.items) {
+        if (item.itemId) {
+          const stockItem = currentStockItems.find(i => i.id === item.itemId);
+          if (stockItem) {
+            const stockChange = currentIsSale ? -item.qty : item.qty;
+            await updateItem('items', item.itemId, {
+              stock: stockItem.stock + stockChange,
+            });
+          }
+        }
+      }
+
+      // Only update UI state after everything succeeds
+      setView('list');
+      setEditId(null);
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      alert('An error occurred while saving. Please try again.');
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
-    
-    setView('list');
-    setEditId(null);
   };
 
-  const handleDelete = async (tx) => {
-    if (!window.confirm(`Are you sure you want to delete this ${isSale ? 'invoice' : 'bill'}?`)) return;
+  const handleDelete = async tx => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete this ${
+          isSale ? 'invoice' : 'bill'
+        }?`
+      )
+    )
+      return;
 
     try {
       // 1. Reverse Balance
       const balanceRollback = isSale ? -tx.totalAmount : tx.totalAmount;
       const party = getItems('parties').find(p => p.id === tx.partyId);
       if (party) {
-        updateItem('parties', tx.partyId, { balance: party.balance + balanceRollback });
+        updateItem('parties', tx.partyId, {
+          balance: party.balance + balanceRollback,
+        });
       }
 
       // 2. Reverse Stock
@@ -205,22 +389,30 @@ const SalesPage = ({ mode = 'sales' }) => {
           const stockItem = getItems('items').find(i => i.id === item.itemId);
           if (stockItem) {
             const stockRollback = isSale ? item.qty : -item.qty;
-            updateItem('items', item.itemId, { stock: stockItem.stock + stockRollback });
+            updateItem('items', item.itemId, {
+              stock: stockItem.stock + stockRollback,
+            });
           }
         }
       }
 
       // 3. Delete Record
-      deleteItem('transactions', tx.id);
+      const tableName = isSale ? 'sales' : 'purchases';
+      deleteItem(tableName, tx.id);
     } catch (error) {
-      console.error("Delete failed:", error);
-      alert("Error deleting record: " + error.message);
+      console.error('Delete failed:', error);
+      alert('Error deleting record: ' + error.message);
     }
   };
 
-  const startEdit = (tx) => {
+  const startEdit = tx => {
     setEditId(tx.id);
-    setSelectedParty(parties.find(p => p.id === tx.partyId) || { id: tx.partyId, name: tx.partyName });
+    setSelectedParty(
+      parties.find(p => p.id === tx.partyId) || {
+        id: tx.partyId,
+        name: tx.partyName,
+      }
+    );
     setInvoiceDate(tx.date);
     setInvoiceNumber(tx.invoiceNumber);
     setItems(tx.items.map(i => ({ ...i })));
@@ -229,7 +421,7 @@ const SalesPage = ({ mode = 'sales' }) => {
     setView('edit');
   };
 
-  const triggerPrint = (tx) => {
+  const triggerPrint = tx => {
     setPrintingTx(tx);
     setTimeout(() => handlePrint(), 100);
   };
@@ -239,9 +431,9 @@ const SalesPage = ({ mode = 'sales' }) => {
     return (
       <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 4, gap: 2 }}>
-          <Button 
-            variant="outlined" 
-            onClick={() => setView('list')} 
+          <Button
+            variant="outlined"
+            onClick={() => setView('list')}
             startIcon={<ChevronLeft size={18} />}
             sx={{ borderRadius: 3 }}
           >
@@ -255,24 +447,33 @@ const SalesPage = ({ mode = 'sales' }) => {
 
         <Grid container spacing={3}>
           <Grid item xs={12} md={8}>
-            <Card elevation={0} sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}>
+            <Card
+              elevation={0}
+              sx={{ mb: 3, border: '1px solid', borderColor: 'divider' }}
+            >
               <CardContent sx={{ p: 3 }}>
                 <Grid container spacing={2.5}>
                   <Grid item xs={12} sm={6}>
                     <Autocomplete
                       options={parties}
-                      getOptionLabel={(option) => option.name || ''}
+                      getOptionLabel={option => option.name || ''}
                       value={selectedParty}
                       onChange={(e, v) => setSelectedParty(v)}
-                      renderInput={(params) => <TextField {...params} label={isSale ? "Customer" : "Vendor"} required />}
+                      renderInput={params => (
+                        <TextField
+                          {...params}
+                          label={isSale ? 'Customer' : 'Vendor'}
+                          required
+                        />
+                      )}
                     />
                   </Grid>
                   <Grid item xs={6} sm={3}>
                     <TextField
                       fullWidth
-                      label={isSale ? "Invoice #" : "Bill #"}
+                      label={isSale ? 'Invoice #' : 'Bill #'}
                       value={invoiceNumber}
-                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      onChange={e => setInvoiceNumber(e.target.value)}
                     />
                   </Grid>
                   <Grid item xs={6} sm={3}>
@@ -281,7 +482,7 @@ const SalesPage = ({ mode = 'sales' }) => {
                       type="date"
                       label="Date"
                       value={invoiceDate}
-                      onChange={(e) => setInvoiceDate(e.target.value)}
+                      onChange={e => setInvoiceDate(e.target.value)}
                       InputLabelProps={{ shrink: true }}
                     />
                   </Grid>
@@ -294,17 +495,22 @@ const SalesPage = ({ mode = 'sales' }) => {
                       label="Description/Notes"
                       placeholder="Add any additional notes or description..."
                       value={description}
-                      onChange={(e) => setDescription(e.target.value)}
+                      onChange={e => setDescription(e.target.value)}
                       multiline
                       rows={2}
                     />
                   </Grid>
-                  <Grid item xs={12} sm={4} sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Grid
+                    item
+                    xs={12}
+                    sm={4}
+                    sx={{ display: 'flex', alignItems: 'center' }}
+                  >
                     <FormControlLabel
                       control={
                         <Switch
                           checked={noGST}
-                          onChange={(e) => setNoGST(e.target.checked)}
+                          onChange={e => setNoGST(e.target.checked)}
                           color="primary"
                         />
                       }
@@ -316,17 +522,28 @@ const SalesPage = ({ mode = 'sales' }) => {
               </CardContent>
             </Card>
 
-            <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+            <Card
+              elevation={0}
+              sx={{ border: '1px solid', borderColor: 'divider' }}
+            >
               <CardContent sx={{ p: 0 }}>
                 <TableContainer>
                   <Table size="small">
                     <TableHead sx={{ bgcolor: 'background.default' }}>
                       <TableRow>
                         <TableCell sx={{ pl: 3 }}>Item Details</TableCell>
-                        <TableCell width={80}>Qty</TableCell>
-                        <TableCell width={120}>Price</TableCell>
-                        <TableCell width={100}>GST %</TableCell>
-                        <TableCell width={120} align="right" sx={{ pr: 3 }}>Total</TableCell>
+                        <TableCell width={80} align="center">
+                          Qty
+                        </TableCell>
+                        <TableCell width={120} align="right">
+                          Price
+                        </TableCell>
+                        <TableCell width={100} align="center">
+                          GST %
+                        </TableCell>
+                        <TableCell width={120} align="right" sx={{ pr: 3 }}>
+                          Total
+                        </TableCell>
                         <TableCell width={50}></TableCell>
                       </TableRow>
                     </TableHead>
@@ -336,42 +553,83 @@ const SalesPage = ({ mode = 'sales' }) => {
                           <TableCell sx={{ pl: 3, py: 2 }}>
                             <Autocomplete
                               options={stockItems}
-                              getOptionLabel={(option) => option.name || ''}
+                              getOptionLabel={option => option.name || ''}
                               size="small"
-                              value={stockItems.find(i => i.id === item.itemId) || null}
-                              onChange={(e, v) => updateItemRow(index, 'itemId', v?.id)}
-                              renderInput={(params) => <TextField {...params} placeholder="Select Product" variant="standard" />}
+                              value={
+                                stockItems.find(i => i.id === item.itemId) ||
+                                null
+                              }
+                              onChange={(e, v) =>
+                                updateItemRow(index, 'itemId', v?.id)
+                              }
+                              renderInput={params => (
+                                <TextField
+                                  {...params}
+                                  placeholder="Select Product"
+                                  variant="standard"
+                                />
+                              )}
                             />
                           </TableCell>
-                          <TableCell>
+                          <TableCell align="center">
                             <TextField
                               type="number"
                               size="small"
                               variant="standard"
                               value={item.qty}
-                              onChange={(e) => updateItemRow(index, 'qty', Number(e.target.value))}
+                              onChange={e =>
+                                updateItemRow(
+                                  index,
+                                  'qty',
+                                  Number(e.target.value)
+                                )
+                              }
                             />
                           </TableCell>
-                          <TableCell>
+                          <TableCell align="right">
                             <TextField
                               type="number"
                               size="small"
                               variant="standard"
                               value={item.price}
-                              onChange={(e) => updateItemRow(index, 'price', Number(e.target.value))}
-                              InputProps={{ startAdornment: <Typography variant="caption" sx={{ mr: 0.5 }}>₹</Typography> }}
+                              onChange={e =>
+                                updateItemRow(
+                                  index,
+                                  'price',
+                                  Number(e.target.value)
+                                )
+                              }
+                              InputProps={{
+                                startAdornment: (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ mr: 0.5 }}
+                                  >
+                                    ₹
+                                  </Typography>
+                                ),
+                              }}
                             />
                           </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">{item.taxRate}%</Typography>
+                          <TableCell align="center">
+                            <Typography variant="body2">
+                              {item.taxRate}%
+                            </Typography>
                           </TableCell>
                           <TableCell align="right" sx={{ pr: 3 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            <Typography
+                              variant="body2"
+                              sx={{ fontWeight: 700 }}
+                            >
                               ₹{item.total.toFixed(2)}
                             </Typography>
                           </TableCell>
                           <TableCell sx={{ pr: 1 }}>
-                            <IconButton size="small" color="error" onClick={() => removeItemRow(index)}>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => removeItemRow(index)}
+                            >
                               <Trash2 size={16} />
                             </IconButton>
                           </TableCell>
@@ -381,7 +639,12 @@ const SalesPage = ({ mode = 'sales' }) => {
                   </Table>
                 </TableContainer>
                 <Box sx={{ p: 2, pl: 3 }}>
-                  <Button startIcon={<Plus size={18} />} onClick={addItemRow} variant="text" sx={{ fontWeight: 600 }}>
+                  <Button
+                    startIcon={<Plus size={18} />}
+                    onClick={addItemRow}
+                    variant="text"
+                    sx={{ fontWeight: 600 }}
+                  >
                     Add Another Item
                   </Button>
                 </Box>
@@ -390,24 +653,89 @@ const SalesPage = ({ mode = 'sales' }) => {
           </Grid>
 
           <Grid item xs={12} md={4}>
-            <Card elevation={0} sx={{ position: 'sticky', top: 24, border: '1px solid', borderColor: 'primary.light', bgcolor: 'primary.50' }}>
+            <Card
+              elevation={0}
+              sx={{
+                position: 'sticky',
+                top: 24,
+                border: '1px solid',
+                borderColor: 'primary.light',
+                bgcolor: 'primary.50',
+              }}
+            >
               <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Billing Summary</Typography>
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: 700, mb: 3 }}
+                >
+                  Billing Summary
+                </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}><Typography color="text.secondary" variant="body2">Subtotal</Typography></Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}><Typography variant="body2">₹{calculateSubtotal().toFixed(2)}</Typography></Grid>
-                  <Grid item xs={6}><Typography color="text.secondary" variant="body2">GST Total</Typography></Grid>
-                  <Grid item xs={6} sx={{ textAlign: 'right' }}><Typography variant="body2">₹{calculateTax().toFixed(2)}</Typography></Grid>
+                  <Grid item xs={6}>
+                    <Typography
+                      color="text.secondary"
+                      variant="body2"
+                    >
+                      Subtotal
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2">
+                      ₹{calculateSubtotal().toFixed(2)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography
+                      color="text.secondary"
+                      variant="body2"
+                    >
+                      GST Total
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2">
+                      ₹{calculateTax().toFixed(2)}
+                    </Typography>
+                  </Grid>
                 </Grid>
                 <Divider sx={{ my: 2.5 }} />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 800 }}>Total</Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    mb: 4,
+                  }}
+                >
+                  <Typography
+                    variant="h5"
+                    sx={{ fontWeight: 800 }}
+                  >
+                    Total
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    sx={{
+                      fontWeight: 800,
+                      color: 'primary.main',
+                    }}
+                  >
                     ₹{calculateTotal().toFixed(2)}
                   </Typography>
                 </Box>
-                <Button variant="contained" fullWidth size="large" startIcon={<Save size={20} />} onClick={handleSave} sx={{ borderRadius: 3, py: 1.5 }}>
-                  {view === 'edit' ? 'Update Transaction' : 'Save Transaction'}
+                <Button
+                  variant="contained"
+                  fullWidth
+                  size="large"
+                  startIcon={<Save size={20} />}
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  sx={{ borderRadius: 3, py: 1.5 }}
+                >
+                  {isSaving
+                    ? 'Saving...'
+                    : view === 'edit'
+                    ? 'Update Transaction'
+                    : 'Save Transaction'}
                 </Button>
               </CardContent>
             </Card>
@@ -420,18 +748,29 @@ const SalesPage = ({ mode = 'sales' }) => {
   // RENDER LIST VIEW
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 5 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 5,
+        }}
+      >
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>
             {isSale ? 'Sales Invoices' : 'Purchase Bills'}
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            {isSale ? 'Record sales and track customer receivables.' : 'Manage purchases and track vendor payables.'}
+            {isSale
+              ? 'Record sales and track customer receivables.'
+              : 'Manage purchases and track vendor payables.'}
           </Typography>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={isSale ? <Receipt size={20} /> : <ShoppingBasket size={20} />} 
+        <Button
+          variant="contained"
+          startIcon={
+            isSale ? <Receipt size={20} /> : <ShoppingBasket size={20} />
+          }
           onClick={() => setView('create')}
           size="large"
           sx={{ borderRadius: 3 }}
@@ -444,7 +783,7 @@ const SalesPage = ({ mode = 'sales' }) => {
       <Card sx={{ mb: 3, borderRadius: 2 }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <Button 
+            <Button
               onClick={() => setShowFilters(!showFilters)}
               variant="outlined"
               size="small"
@@ -452,9 +791,23 @@ const SalesPage = ({ mode = 'sales' }) => {
             >
               {showFilters ? 'Hide Filters' : 'Show Filters'}
             </Button>
-            {(filters.dateFrom || filters.dateTo || filters.partyId || filters.minAmount || filters.maxAmount || filters.status !== 'all') && (
-              <Button 
-                onClick={() => setFilters({ dateFrom: '', dateTo: '', partyId: '', minAmount: '', maxAmount: '', status: 'all' })}
+            {(filters.dateFrom ||
+              filters.dateTo ||
+              filters.partyId ||
+              filters.minAmount ||
+              filters.maxAmount ||
+              filters.status !== 'all') && (
+              <Button
+                onClick={() =>
+                  setFilters({
+                    dateFrom: '',
+                    dateTo: '',
+                    partyId: '',
+                    minAmount: '',
+                    maxAmount: '',
+                    status: 'all',
+                  })
+                }
                 variant="text"
                 size="small"
                 color="error"
@@ -463,7 +816,7 @@ const SalesPage = ({ mode = 'sales' }) => {
               </Button>
             )}
           </Box>
-          
+
           {showFilters && (
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6} md={3}>
@@ -472,7 +825,9 @@ const SalesPage = ({ mode = 'sales' }) => {
                   label="From Date"
                   type="date"
                   value={filters.dateFrom}
-                  onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                  onChange={e =>
+                    setFilters({ ...filters, dateFrom: e.target.value })
+                  }
                   InputLabelProps={{ shrink: true }}
                   size="small"
                 />
@@ -483,7 +838,9 @@ const SalesPage = ({ mode = 'sales' }) => {
                   label="To Date"
                   type="date"
                   value={filters.dateTo}
-                  onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                  onChange={e =>
+                    setFilters({ ...filters, dateTo: e.target.value })
+                  }
                   InputLabelProps={{ shrink: true }}
                   size="small"
                 />
@@ -493,10 +850,22 @@ const SalesPage = ({ mode = 'sales' }) => {
                   fullWidth
                   size="small"
                   options={parties}
-                  getOptionLabel={(option) => option.name}
-                  value={parties.find(p => p.id === filters.partyId) || null}
-                  onChange={(e, value) => setFilters({...filters, partyId: value?.id || ''})}
-                  renderInput={(params) => <TextField {...params} label={isSale ? 'Customer' : 'Vendor'} />}
+                  getOptionLabel={option => option.name}
+                  value={
+                    parties.find(p => p.id === filters.partyId) || null
+                  }
+                  onChange={(e, value) =>
+                    setFilters({
+                      ...filters,
+                      partyId: value?.id || '',
+                    })
+                  }
+                  renderInput={params => (
+                    <TextField
+                      {...params}
+                      label={isSale ? 'Customer' : 'Vendor'}
+                    />
+                  )}
                 />
               </Grid>
               <Grid item xs={12} sm={6} md={3}>
@@ -505,7 +874,9 @@ const SalesPage = ({ mode = 'sales' }) => {
                   fullWidth
                   label="Status"
                   value={filters.status}
-                  onChange={(e) => setFilters({...filters, status: e.target.value})}
+                  onChange={e =>
+                    setFilters({ ...filters, status: e.target.value })
+                  }
                   size="small"
                 >
                   <MenuItem value="all">All Status</MenuItem>
@@ -519,8 +890,16 @@ const SalesPage = ({ mode = 'sales' }) => {
                   label="Min Amount"
                   type="number"
                   value={filters.minAmount}
-                  onChange={(e) => setFilters({...filters, minAmount: e.target.value})}
-                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  onChange={e =>
+                    setFilters({ ...filters, minAmount: e.target.value })
+                  }
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        ₹
+                      </InputAdornment>
+                    ),
+                  }}
                   size="small"
                 />
               </Grid>
@@ -530,8 +909,16 @@ const SalesPage = ({ mode = 'sales' }) => {
                   label="Max Amount"
                   type="number"
                   value={filters.maxAmount}
-                  onChange={(e) => setFilters({...filters, maxAmount: e.target.value})}
-                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  onChange={e =>
+                    setFilters({ ...filters, maxAmount: e.target.value })
+                  }
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        ₹
+                      </InputAdornment>
+                    ),
+                  }}
                   size="small"
                 />
               </Grid>
@@ -540,51 +927,99 @@ const SalesPage = ({ mode = 'sales' }) => {
         </CardContent>
       </Card>
 
-      <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', overflowX: 'auto' }}>
+      <TableContainer
+        component={Paper}
+        elevation={0}
+        sx={{
+          border: '1px solid',
+          borderColor: 'divider',
+          overflowX: 'auto',
+        }}
+      >
         <Table sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Document #</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{isSale ? 'Customer' : 'Vendor'}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Amount</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Status</TableCell>
-              <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>
+                {isSale ? 'Customer' : 'Vendor'}
+              </TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">
+                Amount
+              </TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">
+                Status
+              </TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">
+                Actions
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {transactions
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((tx) => (
-              <TableRow key={tx.id} hover>
-                <TableCell>{tx.date}</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>{tx.invoiceNumber}</TableCell>
-                <TableCell>{tx.partyName}</TableCell>
-                <TableCell align="right">
-                  <Typography sx={{ fontWeight: 700 }}>₹{tx.totalAmount.toFixed(2)}</Typography>
-                </TableCell>
-                <TableCell align="right">
-                  <Chip label="Completed" size="small" color="success" variant="outlined" />
-                </TableCell>
-                <TableCell align="right">
-                  <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-                    <IconButton size="small" color="primary" onClick={() => startEdit(tx)} title="Edit">
-                      <Edit size={18} />
-                    </IconButton>
-                    <IconButton size="small" color="primary" onClick={() => triggerPrint(tx)} title="Print">
-                      <Printer size={18} />
-                    </IconButton>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(tx)} title="Delete">
-                      <Trash2 size={18} />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ))}
+              .map(tx => (
+                <TableRow key={tx.id} hover>
+                  <TableCell>{tx.date}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>
+                    {tx.invoiceNumber}
+                  </TableCell>
+                  <TableCell>{tx.partyName}</TableCell>
+                  <TableCell align="right">
+                    <Typography sx={{ fontWeight: 700 }}>
+                      ₹{tx.totalAmount.toFixed(2)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Chip
+                      label="Completed"
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        gap: 0.5,
+                        justifyContent: 'flex-end',
+                      }}
+                    >
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => startEdit(tx)}
+                        title="Edit"
+                      >
+                        <Edit size={18} />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => triggerPrint(tx)}
+                        title="Print"
+                      >
+                        <Printer size={18} />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleDelete(tx)}
+                        title="Delete"
+                      >
+                        <Trash2 size={18} />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              ))}
             {transactions.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                  <Typography color="text.secondary">No transactions found</Typography>
+                  <Typography color="text.secondary">
+                    No transactions found
+                  </Typography>
                 </TableCell>
               </TableRow>
             )}
@@ -598,7 +1033,7 @@ const SalesPage = ({ mode = 'sales' }) => {
         page={page}
         onPageChange={(event, newPage) => setPage(newPage)}
         rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(event) => {
+        onRowsPerPageChange={event => {
           setRowsPerPage(parseInt(event.target.value, 10));
           setPage(0);
         }}
@@ -607,7 +1042,11 @@ const SalesPage = ({ mode = 'sales' }) => {
       />
 
       <div style={{ display: 'none' }}>
-        <InvoiceTemplate ref={printRef} transaction={printingTx} business={currentBusiness} />
+        <InvoiceTemplate
+          ref={printRef}
+          transaction={printingTx}
+          business={currentBusiness}
+        />
       </div>
     </Box>
   );

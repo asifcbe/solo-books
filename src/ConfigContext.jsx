@@ -26,13 +26,28 @@ export const ConfigProvider = ({ children }) => {
     }
   });
 
+  // Deep merge utility
+  const deepMerge = (target, source) => {
+    for (const key in source) {
+      if (source[key] instanceof Object && key in target) {
+        Object.assign(source[key], deepMerge(target[key], source[key]));
+      }
+    }
+    Object.assign(target || {}, source);
+    return target;
+  };
+
   const loadConfig = async () => {
     try {
       const response = await fetch('/config.json?v=' + Date.now());
       if (response.ok) {
         const configData = await response.json();
         console.log('Config loaded:', configData);
-        setConfig(prevConfig => ({ ...prevConfig, ...configData }));
+        setConfig(prevConfig => {
+          // Create a deep copy of prevConfig to avoid mutation
+          const newConfig = JSON.parse(JSON.stringify(prevConfig));
+          return deepMerge(newConfig, configData);
+        });
       } else {
         console.log('Config fetch failed:', response.status);
       }
@@ -43,15 +58,12 @@ export const ConfigProvider = ({ children }) => {
 
   useEffect(() => {
     loadConfig();
-    // Poll for config changes every 5 seconds
-    const interval = setInterval(loadConfig, 5000);
     
-    // Reload config when window gains focus
+    // Only reload config when window gains focus (e.g., after editing config.json)
     const handleFocus = () => loadConfig();
     window.addEventListener('focus', handleFocus);
     
     return () => {
-      clearInterval(interval);
       window.removeEventListener('focus', handleFocus);
     };
   }, []);

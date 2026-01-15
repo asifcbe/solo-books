@@ -4,25 +4,40 @@ import { useData } from './DataContext';
 const BusinessContext = createContext();
 
 export const BusinessProvider = ({ children }) => {
-  const { data, loading } = useData();
+  const { allBusinessData, loading, updateCurrentBusinessId } = useData();
   const [currentBusinessId, setCurrentBusinessId] = useState(() => {
-    return localStorage.getItem('currentBusinessId') || null;
+    return Number(localStorage.getItem('currentBusinessId')) || 1;
   });
 
-  const businesses = data.businesses || [];
+  // Extract businesses from object
+  const businesses = Object.values(allBusinessData).map(b => ({
+    id: b.id,
+    name: b.name,
+    gstNumber: b.gstNumber,
+    address: b.address,
+    phone: b.phone,
+    email: b.email,
+    state: b.state
+  }));
   
-  const currentBusiness = businesses.find(b => b.id === Number(currentBusinessId)) || businesses[0];
+  const currentBusiness = businesses.find(b => b.id === currentBusinessId) || businesses[0];
 
   useEffect(() => {
     if (currentBusiness && !loading) {
       setCurrentBusinessId(currentBusiness.id);
       localStorage.setItem('currentBusinessId', currentBusiness.id);
+      if (updateCurrentBusinessId) {
+        updateCurrentBusinessId(currentBusiness.id);
+      }
     }
-  }, [currentBusiness, loading]);
+  }, [currentBusiness?.id, loading, updateCurrentBusinessId]);
 
   const switchBusiness = (id) => {
     setCurrentBusinessId(id);
     localStorage.setItem('currentBusinessId', id);
+    if (updateCurrentBusinessId) {
+      updateCurrentBusinessId(id);
+    }
   };
 
   return (

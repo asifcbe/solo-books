@@ -2,8 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Box, Typography, Grid, TextField, MenuItem, Button, 
   Card, CardContent, Stack, Avatar, alpha, useTheme, 
-  Divider, InputAdornment, IconButton, InputBase, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  TablePagination
+   InputAdornment, IconButton, InputBase, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  TablePagination, Tabs, Tab
 } from '@mui/material';
 import { 
   CheckCircle2, ArrowLeft, Landmark, Banknote, 
@@ -21,6 +21,7 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
   const { data, addItem, updateItem, deleteItem, getItems } = useData();
   
   // States
+  const [tabValue, setTabValue] = useState(0); // 0: In, 1: Out
   const [formData, setFormData] = useState({
     partyId: '', amount: '', date: new Date().toISOString().split('T')[0],
     paymentMode: 'Cash', referenceNo: '', notes: ''
@@ -46,11 +47,18 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
   // Database Queries
-  const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
-  const transactions = getItems('transactions')
-    .filter(t => t.businessId === currentBusiness?.id && t.type === (mode === 'payment-in' ? 'PaymentIn' : 'PaymentOut'));
+  const isPaymentIn = tabValue === 0;
+  
+  // Filter parties based on payment type
+  const parties = getItems('parties').filter(p => {
+    if (p.businessId !== currentBusiness?.id) return false;
+    // Payment In = Customers, Payment Out = Vendors
+    return isPaymentIn ? p.type === 'Customer' : p.type === 'Vendor';
+  });
+  
+  const transactions = getItems('payments')
+    .filter(t => t.businessId === currentBusiness?.id && t.type === (isPaymentIn ? 'PaymentIn' : 'PaymentOut'));
 
-  const isPaymentIn = mode === 'payment-in';
   const accentColor = isPaymentIn ? theme.palette.success.main : theme.palette.warning.main;
 
   const selectedParty = useMemo(() => parties.find(p => p.id === formData.partyId), [formData.partyId, parties]);
@@ -95,19 +103,69 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
   }, [searchQuery, dateRange, filters]);
 
   const handleSave = async () => {
-    if (!formData.partyId || !formData.amount) return;
-    const amountNum = parseFloat(formData.amount);
-    
-    addItem('transactions', {
-      businessId: currentBusiness.id, partyId: formData.partyId, partyName: selectedParty.name,
-      type: isPaymentIn ? 'PaymentIn' : 'PaymentOut', totalAmount: amountNum,
-      date: formData.date, paymentMode: formData.paymentMode,
-      referenceNo: formData.referenceNo || `REF-${Date.now().toString().slice(-6)}`, notes: formData.notes
-    });
+    // Validate business
+    if (!currentBusiness?.id) {
+      alert('Business not selected. Please refresh and try again.');
+      return;
+    }
 
-    const newBalance = (selectedParty.balance || 0) + (isPaymentIn ? -amountNum : amountNum);
-    updateItem('parties', formData.partyId, { balance: newBalance });
-    setFormData({ ...formData, amount: '', referenceNo: '', notes: '' });
+    // Validate required fields
+    if (!formData.partyId || !formData.amount) {
+      alert('Please select a party and enter an amount');
+      return;
+    }
+
+    if (!selectedParty) {
+      alert('Please select a valid party');
+      return;
+    }
+
+    const amountNum = parseFloat(formData.amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert('Please enter a valid amount greater than zero');
+      return;
+    }
+
+    try {
+      const paymentData = {
+        businessId: currentBusiness.id,
+        partyId: formData.partyId,
+        partyName: selectedParty.name || 'Unknown',
+        type: isPaymentIn ? 'PaymentIn' : 'PaymentOut',
+        totalAmount: amountNum,
+        date: formData.date || new Date().toISOString().split('T')[0],
+        paymentMode: formData.paymentMode || 'Cash',
+        referenceNo: formData.referenceNo || `REF-${Date.now().toString().slice(-6)}`,
+        notes: formData.notes || ''
+      };
+      
+      const saved = await addItem('payments', paymentData);
+
+      if (!saved) {
+        // Check if payment was actually saved despite return value
+        const savedPayment = getItems('payments').find(p => 
+          p.partyId === paymentData.partyId && 
+          p.totalAmount === paymentData.totalAmount &&
+          p.date === paymentData.date &&
+          p.businessId === paymentData.businessId
+        );
+        
+        if (!savedPayment) {
+          alert('Failed to save payment. Please check your connection and try again.');
+          return;
+        }
+      }
+
+      // Update party balance
+      const newBalance = (selectedParty.balance || 0) + (isPaymentIn ? -amountNum : amountNum);
+      await updateItem('parties', formData.partyId, { balance: newBalance });
+      
+      // Reset form
+      setFormData({ ...formData, amount: '', referenceNo: '', notes: '' });
+    } catch (error) {
+      console.error('Error saving payment:', error);
+      alert('An error occurred while saving. Please try again.');
+    }
   };
 
   return (
@@ -118,8 +176,15 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
         <IconButton onClick={() => navigate(-1)} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
           <ArrowLeft size={20} />
         </IconButton>
-        <Typography variant="h4" sx={{ fontWeight: 900 }}>{isPaymentIn ? 'Payment In' : 'Payment Out'}</Typography>
+        <Typography variant="h4" sx={{ fontWeight: 900 }}>Payments</Typography>
       </Stack>
+
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} aria-label="payment tabs">
+          <Tab label="Payment In (Received)" sx={{ fontWeight: 700 }} />
+          <Tab label="Payment Out (Paid)" sx={{ fontWeight: 700 }} />
+        </Tabs>
+      </Box>
 {/* BOTTOM: Entry Form */}
         <Grid item xs={12} sx={{pb:2}}>
           <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>

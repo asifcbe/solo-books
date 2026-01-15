@@ -14,7 +14,7 @@ const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
   const { mode, primaryColor, updateTheme } = useThemeContext();
   const { config, reloadConfig } = useConfig();
-  const { addItem, updateItem, deleteItem, getItems } = useData();
+  const { addBusiness, updateBusiness, deleteBusiness: deleteBusinessFromData, deleteItem, getItems } = useData();
   const [formData, setFormData] = useState({
     name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
     username: '', password: '', confirmPassword: ''
@@ -53,42 +53,57 @@ const SettingsPage = () => {
       }
     }
     
+    // Validate required fields
+    if (!formData.name || formData.name.trim() === '') {
+      setMsg({ type: 'error', text: 'Business name is required!' });
+      setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+      return;
+    }
+
     try {
       if (isNew) {
         const businessData = {
           name: formData.name,
-          gstNumber: formData.gstNumber,
-          address: formData.address,
-          phone: formData.phone,
-          email: formData.email,
-          state: formData.state,
-          username: formData.username,
-          password: formData.password
+          gstNumber: formData.gstNumber || '',
+          address: formData.address || '',
+          phone: formData.phone || '',
+          email: formData.email || '',
+          state: formData.state || 'Unknown'
         };
-        const id = await addItem('businesses', businessData);
-        setCurrentBusinessId(id);
-        setIsNew(false);
-        setMsg({ type: 'success', text: 'New business created successfully!' });
+        
+        const id = await addBusiness(businessData);
+        if (id) {
+          setCurrentBusinessId(id);
+          setIsNew(false);
+          setMsg({ type: 'success', text: 'New business created successfully!' });
+        } else {
+          setMsg({ type: 'error', text: 'Failed to create business. Please try again.' });
+        }
       } else if (currentBusiness?.id) {
         const updateData = {
           name: formData.name,
-          gstNumber: formData.gstNumber,
-          address: formData.address,
-          phone: formData.phone,
-          email: formData.email,
-          state: formData.state
+          gstNumber: formData.gstNumber || '',
+          address: formData.address || '',
+          phone: formData.phone || '',
+          email: formData.email || '',
+          state: formData.state || 'Unknown'
         };
-        updateItem('businesses', currentBusiness.id, updateData);
-        setMsg({ type: 'success', text: 'Business profile updated successfully!' });
+        
+        const saved = await updateBusiness(currentBusiness.id, updateData);
+        if (saved) {
+          setMsg({ type: 'success', text: 'Business profile updated successfully!' });
+        } else {
+          setMsg({ type: 'error', text: 'Failed to update business. Please try again.' });
+        }
       }
     } catch (err) {
       console.error("Save failed:", err);
-      setMsg({ type: 'error', text: 'Failed to save: ' + err.message });
+      setMsg({ type: 'error', text: 'Failed to save: ' + (err.message || 'Unknown error') });
     }
     setTimeout(() => setMsg({ type: '', text: '' }), 4000);
   };
 
-  const deleteBusiness = async (id) => {
+  const handleDeleteBusiness = async (id) => {
     const bizToDelete = businesses.find(b => b.id === id);
     if (!bizToDelete) return;
 
@@ -106,25 +121,39 @@ const SettingsPage = () => {
         const otherBusiness = businesses.find(b => b.id !== id);
         
         // Delete all related data
-        const parties = getItems('parties', { businessId: id });
-        const items = getItems('items', { businessId: id });
-        const transactions = getItems('transactions', { businessId: id });
-        const opticals = getItems('opticals', { businessId: id });
+        const parties = getItems('parties').filter(p => p.businessId === id);
+        const items = getItems('items').filter(i => i.businessId === id);
+        const sales = getItems('sales').filter(s => s.businessId === id);
+        const purchases = getItems('purchases').filter(p => p.businessId === id);
+        const expenses = getItems('expenses').filter(e => e.businessId === id);
+        const payments = getItems('payments').filter(p => p.businessId === id);
+        const opticals = getItems('opticals').filter(o => o.businessId === id);
         
-        parties.forEach(party => deleteItem('parties', party.id));
-        items.forEach(item => deleteItem('items', item.id));
-        transactions.forEach(tx => deleteItem('transactions', tx.id));
-        opticals.forEach(opt => deleteItem('opticals', opt.id));
-        deleteItem('businesses', id);
+        // Delete all related data (in parallel for better performance)
+        await Promise.all([
+          ...parties.map(party => deleteItem('parties', party.id)),
+          ...items.map(item => deleteItem('items', item.id)),
+          ...sales.map(sale => deleteItem('sales', sale.id)),
+          ...purchases.map(purchase => deleteItem('purchases', purchase.id)),
+          ...expenses.map(expense => deleteItem('expenses', expense.id)),
+          ...payments.map(payment => deleteItem('payments', payment.id)),
+          ...opticals.map(optical => deleteItem('opticals', optical.id))
+        ]);
 
-        if (id === currentBusiness?.id && otherBusiness) {
-          switchBusiness(otherBusiness.id);
-        }
+        // Delete the business
+        const deleted = await deleteBusinessFromData(id);
         
-        setMsg({ type: 'success', text: 'Business and all its data deleted.' });
+        if (deleted) {
+          if (id === currentBusiness?.id && otherBusiness) {
+            switchBusiness(otherBusiness.id);
+          }
+          setMsg({ type: 'success', text: 'Business and all its data deleted.' });
+        } else {
+          setMsg({ type: 'error', text: 'Failed to delete business. Please try again.' });
+        }
       } catch (err) {
         console.error("Deletion failed:", err);
-        setMsg({ type: 'error', text: 'Deletion failed: ' + err.message });
+        setMsg({ type: 'error', text: 'Deletion failed: ' + (err.message || 'Unknown error') });
       }
       setTimeout(() => setMsg({ type: '', text: '' }), 4000);
     }
@@ -296,7 +325,7 @@ const SettingsPage = () => {
                         <IconButton 
                           size="small" 
                           color="error" 
-                          onClick={() => deleteBusiness(biz.id)}
+                          onClick={() => handleDeleteBusiness(biz.id)}
                           title="Delete business"
                         >
                           <Trash2 size={18} />

@@ -99,13 +99,67 @@ const ExpensesPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const expenseData = { ...formData, businessId: currentBusiness.id };
-    if (editingExpense) {
-      updateItem('expenses', editingExpense.id, expenseData);
-    } else {
-      addItem('expenses', expenseData);
+    
+    // Validate business
+    if (!currentBusiness?.id) {
+      alert('Business not selected. Please refresh and try again.');
+      return;
     }
-    handleClose();
+
+    // Validate required fields
+    if (!formData.category || !formData.description || !formData.description.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    const amountNum = Number(formData.amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert('Please enter a valid amount greater than zero');
+      return;
+    }
+
+    if (!formData.date) {
+      alert('Please select a date');
+      return;
+    }
+
+    try {
+      const expenseData = { 
+        ...formData, 
+        businessId: currentBusiness.id,
+        amount: amountNum,
+        description: formData.description.trim(),
+        date: formData.date
+      };
+      
+      let saved;
+      if (editingExpense) {
+        saved = await updateItem('expenses', editingExpense.id, expenseData);
+      } else {
+        saved = await addItem('expenses', expenseData);
+      }
+      
+      if (!saved) {
+        // Check if expense was actually saved despite return value
+        const savedExpense = getItems('expenses').find(e => 
+          e.description === expenseData.description && 
+          e.amount === expenseData.amount &&
+          e.date === expenseData.date &&
+          e.businessId === expenseData.businessId &&
+          (!editingExpense || e.id === editingExpense.id)
+        );
+        
+        if (!savedExpense) {
+          alert('Failed to save expense. Please check your connection and try again.');
+          return;
+        }
+      }
+      
+      handleClose();
+    } catch (error) {
+      console.error('Error saving expense:', error);
+      alert('An error occurred while saving. Please try again.');
+    }
   };
 
   const handleDelete = async (id) => {

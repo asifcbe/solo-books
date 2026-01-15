@@ -14,7 +14,7 @@
     "settings": true
   },
   "multiBusiness": true,
-  "useIndexedDB": true,
+  "useIndexedDB": false,
   "theme": {
     "primaryColor": "#1976d2",
     "secondaryColor": "#dc004e"

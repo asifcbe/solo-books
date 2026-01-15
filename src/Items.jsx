@@ -45,13 +45,56 @@ const ItemsPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const itemData = { ...formData, businessId: currentBusiness.id };
-    if (editingItem) {
-      updateItem('items', editingItem.id, itemData);
-    } else {
-      addItem('items', itemData);
+    
+    // Validate business
+    if (!currentBusiness?.id) {
+      alert('Business not selected. Please refresh and try again.');
+      return;
     }
-    handleClose();
+
+    // Validate required fields
+    if (!formData.name || formData.name.trim() === '') {
+      alert('Please enter an item name');
+      return;
+    }
+
+    try {
+      const itemData = { 
+        ...formData, 
+        businessId: currentBusiness.id,
+        name: formData.name.trim(),
+        salePrice: Number(formData.salePrice) || 0,
+        purchasePrice: Number(formData.purchasePrice) || 0,
+        taxRate: Number(formData.taxRate) || 0,
+        stock: Number(formData.stock) || 0
+      };
+      
+      let saved;
+      if (editingItem) {
+        saved = await updateItem('items', editingItem.id, itemData);
+      } else {
+        saved = await addItem('items', itemData);
+      }
+      
+      if (!saved) {
+        // Check if item was actually saved despite return value
+        const savedItem = getItems('items').find(i => 
+          i.name === itemData.name && 
+          i.businessId === itemData.businessId &&
+          (!editingItem || i.id === editingItem.id)
+        );
+        
+        if (!savedItem) {
+          alert('Failed to save item. Please check your connection and try again.');
+          return;
+        }
+      }
+      
+      handleClose();
+    } catch (error) {
+      console.error('Error saving item:', error);
+      alert('An error occurred while saving. Please try again.');
+    }
   };
 
   const handleDelete = async (id) => {
