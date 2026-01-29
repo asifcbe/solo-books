@@ -25,6 +25,7 @@ const SalesPage = ({ mode = 'sales' }) => {
   const [description, setDescription] = useState('');
   const [noGST, setNoGST] = useState(false);
   const [printingTx, setPrintingTx] = useState(null);
+  const [paperSize, setPaperSize] = useState('A4');
   const printRef = useRef();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -871,17 +872,32 @@ const SalesPage = ({ mode = 'sales' }) => {
               : 'Manage purchases and track vendor payables.'}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={
-            isSale ? <Receipt size={20} /> : <ShoppingBasket size={20} />
-          }
-          onClick={() => setView('create')}
-          size="large"
-          sx={{ borderRadius: 3 }}
-        >
-          {isSale ? 'Create Invoice' : 'Add Bill'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            select
+            size="small"
+            value={paperSize}
+            onChange={(e) => setPaperSize(e.target.value)}
+            sx={{ minWidth: 100 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="A4">A4</MenuItem>
+            <MenuItem value="A5">A5</MenuItem>
+            <MenuItem value="Letter">Letter</MenuItem>
+            <MenuItem value="Legal">Legal</MenuItem>
+          </TextField>
+          <Button
+            variant="contained"
+            startIcon={
+              isSale ? <Receipt size={20} /> : <ShoppingBasket size={20} />
+            }
+            onClick={() => setView('create')}
+            size="large"
+            sx={{ borderRadius: 3 }}
+          >
+            {isSale ? 'Create Invoice' : 'Add Bill'}
+          </Button>
+        </Box>
       </Box>
 
       {/* Filter Controls */}
@@ -1159,6 +1175,7 @@ const SalesPage = ({ mode = 'sales' }) => {
           ref={printRef}
           transaction={printingTx}
           business={currentBusiness}
+          paperSize={paperSize}
         />
       </div>
     </Box>

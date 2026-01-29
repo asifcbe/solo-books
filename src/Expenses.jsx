@@ -43,6 +43,7 @@ const ExpensesPage = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [printingData, setPrintingData] = useState(null);
+  const [paperSize, setPaperSize] = useState('A4');
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
@@ -205,34 +206,49 @@ const ExpensesPage = () => {
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
       <div style={{ display: 'none' }}>
-        <ExpenseTemplate ref={printRef} data={printingData} business={currentBusiness} />
+        <ExpenseTemplate ref={printRef} data={printingData} business={currentBusiness} paperSize={paperSize} />
       </div>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Expenses</Typography>
           <Typography variant="body2" color="text.secondary">Track and manage your business expenses</Typography>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<Plus size={20} />} 
-          onClick={() => handleOpen()}
-          sx={{ 
-            borderRadius: 3, 
-            px: 3, 
-            py: 1, 
-            fontWeight: 700,
-            background: 'linear-gradient(45deg, #4f46e5 30%, #6366f1 90%)',
-            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
-            '&:hover': {
-              background: 'linear-gradient(45deg, #4338ca 30%, #4f46e5 90%)',
-              transform: 'translateY(-1px)',
-              boxShadow: '0 6px 16px rgba(79, 70, 229, 0.3)',
-            },
-            transition: 'all 0.2s'
-          }}
-        >
-          Add Expense
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            select
+            size="small"
+            value={paperSize}
+            onChange={(e) => setPaperSize(e.target.value)}
+            sx={{ minWidth: 100 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="A4">A4</MenuItem>
+            <MenuItem value="A5">A5</MenuItem>
+            <MenuItem value="Letter">Letter</MenuItem>
+            <MenuItem value="Legal">Legal</MenuItem>
+          </TextField>
+          <Button 
+            variant="contained" 
+            startIcon={<Plus size={20} />} 
+            onClick={() => handleOpen()}
+            sx={{ 
+              borderRadius: 3, 
+              px: 3, 
+              py: 1, 
+              fontWeight: 700,
+              background: 'linear-gradient(45deg, #4f46e5 30%, #6366f1 90%)',
+              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.2)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #4338ca 30%, #4f46e5 90%)',
+                transform: 'translateY(-1px)',
+                boxShadow: '0 6px 16px rgba(79, 70, 229, 0.3)',
+              },
+              transition: 'all 0.2s'
+            }}
+          >
+            Add Expense
+          </Button>
+        </Box>
       </Box>
 
       <Grid container spacing={3} sx={{ mb: 4 }}>

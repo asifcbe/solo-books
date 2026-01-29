@@ -1,15 +1,25 @@
 import React, { forwardRef } from 'react';
 
-const ReportTemplate = forwardRef(({ reportData, business, filters, title }, ref) => {
+const ReportTemplate = forwardRef(({ reportData, business, filters, title, paperSize = 'A4' }, ref) => {
   if (!reportData || !business) return null;
+
+  // Paper size dimensions (width x height in mm)
+  const paperSizes = {
+    'A4': { width: '210mm', height: '297mm' },
+    'A5': { width: '148mm', height: '210mm' },
+    'Letter': { width: '216mm', height: '279mm' },
+    'Legal': { width: '216mm', height: '356mm' }
+  };
+  
+  const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
 
   return (
     <div ref={ref} style={{ 
       padding: '40px', 
       backgroundColor: 'white', 
       color: 'black', 
-      width: '210mm', 
-      minHeight: '297mm', 
+      width: selectedSize.width, 
+      minHeight: selectedSize.height, 
       margin: 'auto', 
       fontFamily: 'Arial, sans-serif',
       fontSize: '12px',

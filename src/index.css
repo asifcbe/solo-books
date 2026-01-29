@@ -95,6 +95,14 @@ button:focus-visible {
     margin: 0 !important;
     padding: 0 !important;
   }
+
+  /* Paper size support */
+  @page {
+    margin: 0;
+  }
+  
+  /* The page will automatically adjust based on the printer settings
+     and the dimensions set in the template components */
 }
 
 .no-print {

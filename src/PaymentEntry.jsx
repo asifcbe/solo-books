@@ -35,6 +35,7 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
     end: new Date().toISOString().split('T')[0]
   });
   const [printingData, setPrintingData] = useState(null);
+  const [paperSize, setPaperSize] = useState('A4');
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
@@ -196,7 +197,7 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
   return (
     <Box sx={{ maxWidth: 1600, mx: 'auto', p: { xs: 2, md: 4 } }}>
       <div style={{ display: 'none' }}>
-        <PaymentTemplate ref={printRef} data={printingData} business={currentBusiness} />
+        <PaymentTemplate ref={printRef} data={printingData} business={currentBusiness} paperSize={paperSize} />
       </div>
       
       {/* Header */}
@@ -205,6 +206,21 @@ const PaymentEntry = ({ mode = 'payment-in' }) => {
           <ArrowLeft size={20} />
         </IconButton>
         <Typography variant="h4" sx={{ fontWeight: 900 }}>Payments</Typography>
+        <Box sx={{ ml: 'auto !important', display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            select
+            size="small"
+            value={paperSize}
+            onChange={(e) => setPaperSize(e.target.value)}
+            sx={{ minWidth: 100 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="A4">A4</MenuItem>
+            <MenuItem value="A5">A5</MenuItem>
+            <MenuItem value="Letter">Letter</MenuItem>
+            <MenuItem value="Legal">Legal</MenuItem>
+          </TextField>
+        </Box>
       </Stack>
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>

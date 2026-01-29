@@ -1,23 +1,33 @@
 import React, { forwardRef } from 'react';
 
-const InvoiceTemplate = forwardRef(({ transaction, business }, ref) => {
+const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' }, ref) => {
   if (!transaction || !business) return null;
 
   const isSale = transaction.type === 'Sales';
+
+  // Paper size dimensions (width x height in mm)
+  const paperSizes = {
+    'A4': { width: '210mm', height: '297mm' },
+    'A5': { width: '148mm', height: '210mm' },
+    'Letter': { width: '216mm', height: '279mm' },
+    'Legal': { width: '216mm', height: '356mm' }
+  };
+  
+  const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
 
   return (
     <div ref={ref} style={{ 
       padding: '40px', 
       backgroundColor: 'white', 
       color: 'black', 
-      width: '210mm', 
-      minHeight: '297mm', 
+      width: selectedSize.width, 
+      minHeight: selectedSize.height, 
       margin: 'auto', 
       border: '1px solid #eee',
       fontFamily: 'Arial, sans-serif',
       fontSize: '14px',
       lineHeight: '1.4'
-    }}>
+    }>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>

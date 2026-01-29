@@ -18,6 +18,7 @@ const ReportsPage = () => {
   const { currentBusiness } = useBusiness();
   const { getItems } = useData();
   const reportRef = useRef();
+  const [paperSize, setPaperSize] = useState('A4');
   
   // States
   const [reportType, setReportType] = useState('sales'); // sales, purchases, items-sales, items-purchase, gst
@@ -181,6 +182,7 @@ const ReportsPage = () => {
             itemName: items.find(i => i.id === filters.itemId)?.name
           }}
           reportData={reportConfig}
+          paperSize={paperSize}
         />
       </Box>
 
@@ -192,6 +194,19 @@ const ReportsPage = () => {
           </Typography>
         </Box>
         <Stack direction="row" spacing={2}>
+          <TextField
+            select
+            size="small"
+            value={paperSize}
+            onChange={(e) => setPaperSize(e.target.value)}
+            sx={{ minWidth: 100 }}
+            SelectProps={{ displayEmpty: true }}
+          >
+            <MenuItem value="A4">A4</MenuItem>
+            <MenuItem value="A5">A5</MenuItem>
+            <MenuItem value="Letter">Letter</MenuItem>
+            <MenuItem value="Legal">Legal</MenuItem>
+          </TextField>
           <Button 
             variant="contained" 
             startIcon={<Printer size={20} />}

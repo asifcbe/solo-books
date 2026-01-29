@@ -1,18 +1,28 @@
 import React, { forwardRef } from 'react';
 
-const PaymentTemplate = forwardRef(({ data, business }, ref) => {
+const PaymentTemplate = forwardRef(({ data, business, paperSize = 'A4' }, ref) => {
   if (!data || !business) return null;
 
   const { partyName, totalAmount, date, paymentMode, referenceNo, notes, type } = data;
   const isPaymentIn = type === 'PaymentIn';
+
+  // Paper size dimensions (width x height in mm)
+  const paperSizes = {
+    'A4': { width: '210mm', height: '297mm' },
+    'A5': { width: '148mm', height: '210mm' },
+    'Letter': { width: '216mm', height: '279mm' },
+    'Legal': { width: '216mm', height: '356mm' }
+  };
+  
+  const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
 
   return (
     <div ref={ref} style={{ 
       padding: '50px', 
       backgroundColor: 'white', 
       color: 'black', 
-      width: '210mm', 
-      minHeight: '148mm', // Half A4 height
+      width: selectedSize.width, 
+      minHeight: selectedSize.height, 
       margin: 'auto', 
       fontFamily: 'Arial, sans-serif',
       lineHeight: '1.5',

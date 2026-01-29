@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Box, Button, Typography, TextField, Grid, IconButton, InputAdornment,InputBase,
-  Stack, Paper, Divider, Container, alpha, Autocomplete, Alert, Snackbar
+  Stack, Paper, Divider, Container, alpha, Autocomplete, Alert, Snackbar, MenuItem
 } from '@mui/material';
 import { 
   Save, Edit2, Trash2, ChevronLeft, 
@@ -79,6 +79,7 @@ const OpticalsPage = () => {
   const [editId, setEditId] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
   const [printingData, setPrintingData] = useState(null);
+  const [paperSize, setPaperSize] = useState('A4');
   const printRef = useRef();
 
   const handlePrint = useReactToPrint({
@@ -197,7 +198,7 @@ const OpticalsPage = () => {
     return (
       <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', p: { xs: 2, md: 4 } }}>
         <div style={{ display: 'none' }}>
-          <OpticalTemplate ref={printRef} data={formData} business={currentBusiness} />
+          <OpticalTemplate ref={printRef} data={formData} business={currentBusiness} paperSize={paperSize} />
         </div>
         <Container maxWidth="lg">
           
@@ -214,6 +215,19 @@ const OpticalsPage = () => {
               >
                 <ChevronLeft size={20} />
               </IconButton>
+              <TextField
+                select
+                size="small"
+                value={paperSize}
+                onChange={(e) => setPaperSize(e.target.value)}
+                sx={{ minWidth: 100, bgcolor: 'background.paper' }}
+                SelectProps={{ displayEmpty: true }}
+              >
+                <MenuItem value="A4">A4</MenuItem>
+                <MenuItem value="A5">A5</MenuItem>
+                <MenuItem value="Letter">Letter</MenuItem>
+                <MenuItem value="Legal">Legal</MenuItem>
+              </TextField>
               <Button 
                 startIcon={<Printer size={18} />}
                 onClick={() => handlePrint()}
@@ -467,7 +481,7 @@ const OpticalsPage = () => {
   return (
     <Box sx={{ p: 4, maxWidth: 1100, mx: 'auto' }}>
       <div style={{ display: 'none' }}>
-        <OpticalTemplate ref={printRef} data={printingData} business={currentBusiness} />
+        <OpticalTemplate ref={printRef} data={printingData} business={currentBusiness} paperSize={paperSize} />
       </div>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>Optical Records</Typography>

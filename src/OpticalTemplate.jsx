@@ -1,10 +1,20 @@
 import React, { forwardRef } from 'react';
 import { alpha } from '@mui/material';
 
-const OpticalTemplate = forwardRef(({ data, business }, ref) => {
+const OpticalTemplate = forwardRef(({ data, business, paperSize = 'A4' }, ref) => {
   if (!data || !business) return null;
 
   const { rightEye, leftEye, patientName, phone, date, frameType, lensType, notes } = data;
+
+  // Paper size dimensions (width x height in mm)
+  const paperSizes = {
+    'A4': { width: '210mm', height: '297mm' },
+    'A5': { width: '148mm', height: '210mm' },
+    'Letter': { width: '216mm', height: '279mm' },
+    'Legal': { width: '216mm', height: '356mm' }
+  };
+  
+  const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
 
   const tableHeaderStyle = {
     padding: '10px',
@@ -29,8 +39,8 @@ const OpticalTemplate = forwardRef(({ data, business }, ref) => {
       padding: '50px', 
       backgroundColor: 'white', 
       color: 'black', 
-      width: '210mm', 
-      minHeight: '297mm', 
+      width: selectedSize.width, 
+      minHeight: selectedSize.height, 
       margin: 'auto', 
       fontFamily: 'Arial, sans-serif',
       lineHeight: '1.5'
