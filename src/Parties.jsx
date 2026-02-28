@@ -159,25 +159,18 @@ const PartiesPage = () => {
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>Parties</Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<Plus size={18} />} 
-          onClick={() => handleOpen()}
-        >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Parties</Typography>
+        <Button variant="contained" size="small" startIcon={<Plus size={16} />} onClick={() => handleOpen()}>
           Add Party
         </Button>
       </Box>
 
-      <Card sx={{ mb: 4 }}>
+      <Card>
         <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-          <Tabs value={tab} onChange={(e, v) => setTab(v)}>
-            <Tab label="Customers" />
-            <Tab label="Vendors" />
-          </Tabs>
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ minHeight: 40 }}><Tab label="Customers" /><Tab label="Vendors" /></Tabs>
         </Box>
-        <CardContent>
+        <CardContent sx={{ pt: 2, pb: 2 }}>
           <TextField
             fullWidth
             size="small"
@@ -186,16 +179,13 @@ const PartiesPage = () => {
             onChange={(e) => setSearch(e.target.value)}
             InputProps={{
               startAdornment: (
-                <InputAdornment position="start">
-                  <Search size={18} />
-                </InputAdornment>
+                <InputAdornment position="start"><Search size={16} /></InputAdornment>
               ),
             }}
-            sx={{ mb: 3 }}
+            sx={{ mb: 2 }}
           />
 
-          {/* Filter Controls */}
-          <Box sx={{ mb: 3 }}>
+          <Box sx={{ mb: 2 }}>
             <Button 
               onClick={() => setShowFilters(!showFilters)}
               variant="outlined"
@@ -217,7 +207,7 @@ const PartiesPage = () => {
           </Box>
           
           {showFilters && (
-            <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid container spacing={2} sx={{ mb: 2 }}>
               <Grid item xs={12} sm={6} md={3}>
                 <TextField
                   fullWidth
@@ -285,7 +275,7 @@ const PartiesPage = () => {
           )}
 
           <TableContainer component={Paper} variant="outlined">
-            <Table sx={{ minWidth: 650 }}>
+            <Table size="small" sx={{ minWidth: 650 }}>
               <TableHead sx={{ bgcolor: 'background.default' }}>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
@@ -335,19 +325,19 @@ const PartiesPage = () => {
             </Table>
           </TableContainer>
 
-          <TablePagination
-            component="div"
-            count={filteredParties.length}
-            page={page}
-            onPageChange={(event, newPage) => setPage(newPage)}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(event) => {
-              setRowsPerPage(parseInt(event.target.value, 10));
-              setPage(0);
-            }}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            sx={{ borderTop: '1px solid', borderColor: 'divider' }}
-          />
+            <TablePagination
+              component="div"
+              count={filteredParties.length}
+              page={page}
+              onPageChange={(event, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(event) => {
+                setRowsPerPage(parseInt(event.target.value, 10));
+                setPage(0);
+              }}
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              sx={{ borderTop: '1px solid', borderColor: 'divider' }}
+            />
         </CardContent>
       </Card>
 

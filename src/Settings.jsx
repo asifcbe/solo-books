@@ -3,9 +3,9 @@ import {
   Box, Typography, Card, CardContent, TextField, Button, Grid, 
   Divider, List, ListItem, ListItemText, IconButton, Alert, Avatar,
   FormControl, InputLabel, Select, MenuItem, Chip, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions
+  DialogContent, DialogContentText, DialogActions, FormControlLabel, Switch
 } from '@mui/material';
-import { Save, Plus, Trash2, Building2, Check } from 'lucide-react';
+import { Save, Plus, Trash2, Building2, Check, Image, QrCode, FileSearch, RotateCcw, Truck, BookOpen } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useThemeContext } from './ThemeContext';
 import { useConfig } from './ConfigContext';
@@ -14,8 +14,9 @@ import { useData } from './DataContext';
 const SettingsPage = () => {
   const { currentBusiness, businesses, switchBusiness, setCurrentBusinessId } = useBusiness();
   const { mode, primaryColor, updateTheme } = useThemeContext();
-  const { config } = useConfig();
+  const { config, saveConfig } = useConfig();
   const { addBusiness, updateBusiness, deleteBusiness: deleteBusinessFromData, deleteItem, getItems } = useData();
+  const [uploading, setUploading] = useState({ logo: false, qrCode: false });
   const [formData, setFormData] = useState({
     name: '', gstNumber: '', address: '', phone: '', email: '', state: '',
     username: '', password: '', confirmPassword: ''
@@ -23,6 +24,21 @@ const SettingsPage = () => {
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [isNew, setIsNew] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, businessId: null, businessName: '' });
+  const [featuresSaving, setFeaturesSaving] = useState(false);
+
+  const handleFeatureToggle = async (featureKey, checked) => {
+    const newFeatures = { ...(config.features || {}), [featureKey]: checked };
+    setFeaturesSaving(true);
+    try {
+      await saveConfig({ features: newFeatures });
+      setMsg({ type: 'success', text: 'Features updated.' });
+      setTimeout(() => setMsg({ type: '', text: '' }), 3000);
+    } catch (err) {
+      setMsg({ type: 'error', text: 'Failed to update features.' });
+    } finally {
+      setFeaturesSaving(false);
+    }
+  };
 
   // Sync formData with currentBusiness when it changes, unless we are in "isNew" mode
   useEffect(() => {
@@ -40,6 +56,64 @@ const SettingsPage = () => {
       });
     }
   }, [currentBusiness, isNew]);
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentBusiness?.id) return;
+    setUploading(u => ({ ...u, logo: true }));
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await updateBusiness(currentBusiness.id, { logo: reader.result });
+        setMsg({ type: 'success', text: 'Logo updated.' });
+      } catch (err) {
+        setMsg({ type: 'error', text: 'Failed to update logo.' });
+      }
+      setUploading(u => ({ ...u, logo: false }));
+    };
+    reader.onerror = () => { setUploading(u => ({ ...u, logo: false })); setMsg({ type: 'error', text: 'Failed to read file.' }); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleQrCodeUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentBusiness?.id) return;
+    setUploading(u => ({ ...u, qrCode: true }));
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await updateBusiness(currentBusiness.id, { qrCode: reader.result });
+        setMsg({ type: 'success', text: 'QR code updated.' });
+      } catch (err) {
+        setMsg({ type: 'error', text: 'Failed to update QR code.' });
+      }
+      setUploading(u => ({ ...u, qrCode: false }));
+    };
+    reader.onerror = () => { setUploading(u => ({ ...u, qrCode: false })); setMsg({ type: 'error', text: 'Failed to read file.' }); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!currentBusiness?.id) return;
+    try {
+      await updateBusiness(currentBusiness.id, { logo: '' });
+      setMsg({ type: 'success', text: 'Logo removed.' });
+    } catch (err) {
+      setMsg({ type: 'error', text: 'Failed to remove logo.' });
+    }
+  };
+
+  const handleRemoveQrCode = async () => {
+    if (!currentBusiness?.id) return;
+    try {
+      await updateBusiness(currentBusiness.id, { qrCode: '' });
+      setMsg({ type: 'success', text: 'QR code removed.' });
+    } catch (err) {
+      setMsg({ type: 'error', text: 'Failed to remove QR code.' });
+    }
+  };
 
   const handleSaveListUpdate = async (e) => {
     e.preventDefault();
@@ -234,6 +308,57 @@ const SettingsPage = () => {
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     />
                   </Grid>
+                  {!isNew && (
+                    <>
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5, display: 'block' }}>Branding (shown on invoices)</Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 2, p: 2, textAlign: 'center' }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Business Logo</Typography>
+                          {currentBusiness?.logo ? (
+                            <Box>
+                              <img src={currentBusiness.logo} alt="Logo" style={{ maxHeight: 80, maxWidth: '100%', objectFit: 'contain' }} />
+                              <Box sx={{ mt: 1, display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <Button size="small" variant="outlined" component="label" disabled={uploading.logo}>
+                                  Change
+                                  <input type="file" hidden accept="image/*" onChange={handleLogoUpload} />
+                                </Button>
+                                <Button size="small" color="error" onClick={handleRemoveLogo}>Remove</Button>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Button size="small" variant="outlined" component="label" startIcon={<Image size={16} />} disabled={uploading.logo}>
+                              Upload Logo
+                              <input type="file" hidden accept="image/*" onChange={handleLogoUpload} />
+                            </Button>
+                          )}
+                        </Box>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Box sx={{ border: '1px dashed', borderColor: 'divider', borderRadius: 2, p: 2, textAlign: 'center' }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>QR Code</Typography>
+                          {currentBusiness?.qrCode ? (
+                            <Box>
+                              <img src={currentBusiness.qrCode} alt="QR" style={{ width: 80, height: 80, objectFit: 'contain' }} />
+                              <Box sx={{ mt: 1, display: 'flex', gap: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <Button size="small" variant="outlined" component="label" disabled={uploading.qrCode}>
+                                  Change
+                                  <input type="file" hidden accept="image/*" onChange={handleQrCodeUpload} />
+                                </Button>
+                                <Button size="small" color="error" onClick={handleRemoveQrCode}>Remove</Button>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Button size="small" variant="outlined" component="label" startIcon={<QrCode size={16} />} disabled={uploading.qrCode}>
+                              Upload QR Code
+                              <input type="file" hidden accept="image/*" onChange={handleQrCodeUpload} />
+                            </Button>
+                          )}
+                        </Box>
+                      </Grid>
+                    </>
+                  )}
                   {isNew && (
                     <>
                       <Grid item xs={12} sm={6}>
@@ -363,6 +488,94 @@ const SettingsPage = () => {
           </Grid>
         )}
       </Grid>
+
+      {/* Features / Modules */}
+      <Box sx={{ mt: 6 }}>
+        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Features</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>Turn on or off modules you use. Disabled modules are hidden from the menu.</Typography>
+        <Card elevation={0}>
+          <CardContent sx={{ p: 4 }}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={!!config.features?.estimates}
+                      onChange={(e) => handleFeatureToggle('estimates', e.target.checked)}
+                      color="primary"
+                      disabled={featuresSaving}
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FileSearch size={18} />
+                      <span>Estimates</span>
+                    </Box>
+                  }
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Quotes & estimates</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={!!config.features?.creditNotes}
+                      onChange={(e) => handleFeatureToggle('creditNotes', e.target.checked)}
+                      color="primary"
+                      disabled={featuresSaving}
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <RotateCcw size={18} />
+                      <span>Credit Notes</span>
+                    </Box>
+                  }
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Sales returns / credit memos</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={!!config.features?.deliveryNotes}
+                      onChange={(e) => handleFeatureToggle('deliveryNotes', e.target.checked)}
+                      color="primary"
+                      disabled={featuresSaving}
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Truck size={18} />
+                      <span>Delivery Notes</span>
+                    </Box>
+                  }
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Delivery challans</Typography>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={!!config.features?.journal}
+                      onChange={(e) => handleFeatureToggle('journal', e.target.checked)}
+                      color="primary"
+                      disabled={featuresSaving}
+                    />
+                  }
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <BookOpen size={18} />
+                      <span>Journal</span>
+                    </Box>
+                  }
+                />
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4, mt: 0.25 }}>Journal entries</Typography>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      </Box>
 
       <Box sx={{ mt: 6 }}>
         <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Appearance</Typography>

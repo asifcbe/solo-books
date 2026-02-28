@@ -1,9 +1,10 @@
 import React, { forwardRef } from 'react';
 
-const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' }, ref) => {
+const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4', title }, ref) => {
   if (!transaction || !business) return null;
 
   const isSale = transaction.type === 'Sales';
+  const headerTitle = title || (isSale ? 'TAX INVOICE' : 'PURCHASE BILL');
 
   // Paper size dimensions (width x height in mm)
   const paperSizes = {
@@ -14,9 +15,10 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
   };
   
   const selectedSize = paperSizes[paperSize] || paperSizes['A4'];
+  const discountAmount = transaction.discountAmount ?? 0;
 
   return (
-    <div ref={ref} style={{ 
+    <div ref={ref} style={{
       padding: '40px', 
       backgroundColor: 'white', 
       color: 'black', 
@@ -27,23 +29,33 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
       fontFamily: 'Arial, sans-serif',
       fontSize: '14px',
       lineHeight: '1.4'
-    }>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 4px 0' }}>
-            {business.name}
-          </h1>
-          <p style={{ margin: '4px 0' }}>{business.address}</p>
-          <p style={{ margin: '4px 0' }}>Phone: {business.phone}</p>
-          {business.gstNumber && <p style={{ margin: '4px 0' }}>GSTIN: {business.gstNumber}</p>}
+    }}>
+      {/* Header: Logo left, Business info center/left, Doc title + QR right */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flex: 1 }}>
+          {business.logo && (
+            <img src={business.logo} alt="Logo" style={{ maxHeight: '64px', maxWidth: '140px', objectFit: 'contain' }} />
+          )}
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 4px 0' }}>
+              {business.name}
+            </h1>
+            <p style={{ margin: '4px 0' }}>{business.address}</p>
+            <p style={{ margin: '4px 0' }}>Phone: {business.phone}</p>
+            {business.gstNumber && <p style={{ margin: '4px 0' }}>GSTIN: {business.gstNumber}</p>}
+          </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
-            {isSale ? 'TAX INVOICE' : 'PURCHASE BILL'}
-          </h2>
-          <p style={{ margin: '4px 0' }}># {transaction.invoiceNumber}</p>
-          <p style={{ margin: '4px 0' }}>Date: {transaction.date}</p>
+        <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          {business.qrCode && (
+            <img src={business.qrCode} alt="QR" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
+          )}
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
+              {headerTitle}
+            </h2>
+            <p style={{ margin: '4px 0' }}># {transaction.invoiceNumber}</p>
+            <p style={{ margin: '4px 0' }}>Date: {transaction.date}</p>
+          </div>
         </div>
       </div>
 
@@ -55,7 +67,6 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
           {isSale ? 'Bill To:' : 'Vendor Details:'}
         </h3>
         <h4 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0' }}>{transaction.partyName}</h4>
-        {/* We could fetch party details if needed, but for now we use what's in tx */}
       </div>
 
       {/* Items Table */}
@@ -66,6 +77,7 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
             <th style={{ padding: '12px', textAlign: 'left', fontWeight: 'bold', border: '1px solid #ddd' }}>Item Description</th>
             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Qty</th>
             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Rate</th>
+            <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Disc %</th>
             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>GST %</th>
             <th style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', border: '1px solid #ddd' }}>Amount</th>
           </tr>
@@ -77,8 +89,9 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
               <td style={{ padding: '12px', border: '1px solid #ddd', fontWeight: '500' }}>{item.name}</td>
               <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>{item.qty}</td>
               <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>₹{item.price.toFixed(2)}</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>{(item.discountPercent ?? 0) ? `${item.discountPercent}%` : '-'}</td>
               <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>{item.taxRate}%</td>
-              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>₹{item.total.toFixed(2)}</td>
+              <td style={{ padding: '12px', textAlign: 'right', border: '1px solid #ddd' }}>₹{(item.total ?? (item.qty * item.price * (1 + (item.taxRate || 0) / 100))).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -91,6 +104,12 @@ const InvoiceTemplate = forwardRef(({ transaction, business, paperSize = 'A4' },
             <span style={{ color: '#666' }}>Subtotal</span>
             <span>₹{transaction.subtotal?.toFixed(2)}</span>
           </div>
+          {discountAmount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ color: '#666' }}>Discount{transaction.discountPercent ? ` (${transaction.discountPercent}%)` : ''}</span>
+              <span>-₹{discountAmount.toFixed(2)}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ color: '#666' }}>Tax Amount</span>
             <span>₹{transaction.taxAmount?.toFixed(2)}</span>

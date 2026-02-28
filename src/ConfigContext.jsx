@@ -18,7 +18,11 @@ const defaultConfig = {
     payments: true,
     reports: true,
     backup: true,
-    settings: true
+    settings: true,
+    estimates: false,
+    creditNotes: false,
+    deliveryNotes: false,
+    journal: false
   },
   multiBusiness: true,
   useIndexedDB: true,

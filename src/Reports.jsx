@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
   Box, Typography, Grid, Card, CardContent, Table, TableBody, 
-  TableCell, TableContainer, TableHead, TableRow, Paper, Chip,
-  TextField, MenuItem, Button, Stack, Tabs, Tab, InputAdornment,
-  Autocomplete, Divider, alpha
+  TableCell, TableContainer, TableHead, TableRow, Paper,
+  TextField, MenuItem, Button, Stack, Tabs, Tab,
+  Autocomplete, alpha, useTheme
 } from '@mui/material';
 import { 
   FileText, Filter, Printer, Download, Search, Share2, 
@@ -15,13 +15,14 @@ import { useReactToPrint } from 'react-to-print';
 import ReportTemplate from './ReportTemplate';
 
 const ReportsPage = () => {
+  const theme = useTheme();
   const { currentBusiness } = useBusiness();
   const { getItems } = useData();
   const reportRef = useRef();
   const [paperSize, setPaperSize] = useState('A4');
   
   // States
-  const [reportType, setReportType] = useState('sales'); // sales, purchases, items-sales, items-purchase, gst
+  const [reportType, setReportType] = useState('sales'); // sales, purchases, items-sales, items-purchase, gst, trial-balance, aged-receivables, aged-payables
   const [filters, setFilters] = useState({
     dateFrom: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     dateTo: new Date().toISOString().split('T')[0],
@@ -34,6 +35,8 @@ const ReportsPage = () => {
   const purchases = getItems('purchases').filter(p => p.businessId === currentBusiness?.id);
   const parties = getItems('parties').filter(p => p.businessId === currentBusiness?.id);
   const items = getItems('items').filter(i => i.businessId === currentBusiness?.id);
+  const payments = getItems('payments').filter(p => p.businessId === currentBusiness?.id);
+  const journalEntries = getItems('journalEntries').filter(j => j.businessId === currentBusiness?.id);
 
   const filteredData = useMemo(() => {
     let data = [];
@@ -146,10 +149,128 @@ const ReportsPage = () => {
         sgst: Object.values(gstStats).reduce((s, i) => s + i.taxAmount / 2, 0),
         taxAmount: Object.values(gstStats).reduce((s, i) => s + i.taxAmount, 0)
       };
+    } else if (reportType === 'trial-balance') {
+      config.title = 'Trial Balance';
+      config.columns = [
+        { key: 'account', header: 'Account' },
+        { key: 'debit', header: 'Debit', align: 'right', isTotal: true },
+        { key: 'credit', header: 'Credit', align: 'right', isTotal: true }
+      ];
+      const accountBalances = {};
+      const addToAccount = (name, debit, credit) => {
+        if (!accountBalances[name]) accountBalances[name] = { account: name, debit: 0, credit: 0 };
+        accountBalances[name].debit += debit || 0;
+        accountBalances[name].credit += credit || 0;
+      };
+      journalEntries.filter(j => j.date >= filters.dateFrom && j.date <= filters.dateTo).forEach(j => {
+        j.lines?.forEach(l => {
+          addToAccount(l.account, l.debit || 0, l.credit || 0);
+        });
+      });
+      config.rows = Object.values(accountBalances).map(r => ({
+        account: r.account,
+        debit: `₹${r.debit.toFixed(2)}`,
+        credit: `₹${r.credit.toFixed(2)}`
+      }));
+      config.totals = {
+        debit: Object.values(accountBalances).reduce((s, i) => s + i.debit, 0),
+        credit: Object.values(accountBalances).reduce((s, i) => s + i.credit, 0)
+      };
+    } else if (reportType === 'aged-receivables') {
+      config.title = 'Aged Receivables';
+      config.columns = [
+        { key: 'partyName', header: 'Customer' },
+        { key: 'current', header: 'Current', align: 'right', isTotal: true },
+        { key: 'days30', header: '1-30 Days', align: 'right', isTotal: true },
+        { key: 'days60', header: '31-60 Days', align: 'right', isTotal: true },
+        { key: 'days90', header: '61-90 Days', align: 'right', isTotal: true },
+        { key: 'over90', header: 'Over 90 Days', align: 'right', isTotal: true },
+        { key: 'total', header: 'Total', align: 'right', isTotal: true }
+      ];
+      const asOf = new Date(filters.dateTo || new Date().toISOString().split('T')[0]);
+      const customers = parties.filter(p => p.type === 'Customer');
+      const totals = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0, total: 0 };
+      const aged = customers.map(c => {
+        const partySales = sales.filter(s => s.partyId === c.id && s.date <= asOf).reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+        const partyPayments = payments.filter(p => p.partyId === c.id && p.date <= asOf && (p.type === 'PaymentIn' || p.mode === 'payment-in' || !p.mode)).reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const outstanding = (c.balance || 0) + partySales - partyPayments;
+        if (outstanding <= 0) return null;
+        const lastSale = sales.filter(s => s.partyId === c.id).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+        const days = lastSale ? Math.floor((asOf - new Date(lastSale.date)) / (24 * 60 * 60 * 1000)) : 0;
+        let current = 0, d30 = 0, d60 = 0, d90 = 0, over90 = 0;
+        if (days <= 0) current = outstanding;
+        else if (days <= 30) d30 = outstanding;
+        else if (days <= 60) d60 = outstanding;
+        else if (days <= 90) d90 = outstanding;
+        else over90 = outstanding;
+        totals.current += current;
+        totals.days30 += d30;
+        totals.days60 += d60;
+        totals.days90 += d90;
+        totals.over90 += over90;
+        totals.total += outstanding;
+        return {
+          partyName: c.name,
+          current: `₹${current.toFixed(2)}`,
+          days30: `₹${d30.toFixed(2)}`,
+          days60: `₹${d60.toFixed(2)}`,
+          days90: `₹${d90.toFixed(2)}`,
+          over90: `₹${over90.toFixed(2)}`,
+          total: `₹${outstanding.toFixed(2)}`
+        };
+      }).filter(Boolean);
+      config.rows = aged;
+      config.totals = totals;
+    } else if (reportType === 'aged-payables') {
+      config.title = 'Aged Payables';
+      config.columns = [
+        { key: 'partyName', header: 'Vendor' },
+        { key: 'current', header: 'Current', align: 'right', isTotal: true },
+        { key: 'days30', header: '1-30 Days', align: 'right', isTotal: true },
+        { key: 'days60', header: '31-60 Days', align: 'right', isTotal: true },
+        { key: 'days90', header: '61-90 Days', align: 'right', isTotal: true },
+        { key: 'over90', header: 'Over 90 Days', align: 'right', isTotal: true },
+        { key: 'total', header: 'Total', align: 'right', isTotal: true }
+      ];
+      const asOf = new Date(filters.dateTo || new Date().toISOString().split('T')[0]);
+      const vendors = parties.filter(p => p.type === 'Vendor');
+      const totals = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0, total: 0 };
+      const aged = vendors.map(c => {
+        const partyPurchases = purchases.filter(p => p.partyId === c.id && p.date <= asOf).reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const partyPayments = payments.filter(p => p.partyId === c.id && p.date <= asOf && (p.mode === 'payment-out' || p.type === 'PaymentOut')).reduce((sum, p) => sum + (p.totalAmount || 0), 0);
+        const outstanding = (c.balance || 0) + partyPurchases - partyPayments;
+        if (outstanding >= 0) return null;
+        const lastPurch = purchases.filter(p => p.partyId === c.id).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+        const days = lastPurch ? Math.floor((asOf - new Date(lastPurch.date)) / (24 * 60 * 60 * 1000)) : 0;
+        const absOut = Math.abs(outstanding);
+        let current = 0, d30 = 0, d60 = 0, d90 = 0, over90 = 0;
+        if (days <= 0) current = absOut;
+        else if (days <= 30) d30 = absOut;
+        else if (days <= 60) d60 = absOut;
+        else if (days <= 90) d90 = absOut;
+        else over90 = absOut;
+        totals.current += current;
+        totals.days30 += d30;
+        totals.days60 += d60;
+        totals.days90 += d90;
+        totals.over90 += over90;
+        totals.total += absOut;
+        return {
+          partyName: c.name,
+          current: `₹${current.toFixed(2)}`,
+          days30: `₹${d30.toFixed(2)}`,
+          days60: `₹${d60.toFixed(2)}`,
+          days90: `₹${d90.toFixed(2)}`,
+          over90: `₹${over90.toFixed(2)}`,
+          total: `₹${absOut.toFixed(2)}`
+        };
+      }).filter(Boolean);
+      config.rows = aged;
+      config.totals = totals;
     }
 
     return config;
-  }, [reportType, filteredData, filters.itemId]);
+  }, [reportType, filteredData, filters, sales, purchases, parties, payments, journalEntries]);
 
   const handlePrint = useReactToPrint({
     contentRef: reportRef,
@@ -169,8 +290,7 @@ const ReportsPage = () => {
   };
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', pb: 5 }}>
-      {/* Hidden Print Template */}
+    <Box sx={{ maxWidth: 1200, mx: 'auto', pb: 3 }}>
       <Box sx={{ display: 'none' }}>
         <ReportTemplate 
           ref={reportRef}
@@ -186,20 +306,18 @@ const ReportsPage = () => {
         />
       </Box>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, mb: 1 }}>Business Reports</Typography>
-          <Typography variant="body1" color="text.secondary">
-            Generate and print detailed financial reports.
-          </Typography>
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Reports</Typography>
+          <Typography variant="caption" color="text.secondary">Generate financial reports</Typography>
         </Box>
-        <Stack direction="row" spacing={2}>
+        <Stack direction="row" spacing={1} alignItems="center">
           <TextField
             select
             size="small"
             value={paperSize}
             onChange={(e) => setPaperSize(e.target.value)}
-            sx={{ minWidth: 100 }}
+            sx={{ minWidth: 90 }}
             SelectProps={{ displayEmpty: true }}
           >
             <MenuItem value="A4">A4</MenuItem>
@@ -207,34 +325,29 @@ const ReportsPage = () => {
             <MenuItem value="Letter">Letter</MenuItem>
             <MenuItem value="Legal">Legal</MenuItem>
           </TextField>
-          <Button 
-            variant="contained" 
-            startIcon={<Printer size={20} />}
-            onClick={handlePrint}
-            sx={{ borderRadius: 2.5, px: 3 }}
-          >
-            Print Report
+          <Button variant="contained" size="small" startIcon={<Printer size={16} />} onClick={handlePrint}>
+            Print
           </Button>
           <Button 
             variant="outlined" 
-            startIcon={<Share2 size={20} />}
+            size="small"
+            startIcon={<Share2 size={16} />}
             onClick={handleShare}
-            sx={{ borderRadius: 2.5, px: 3, color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#128C7E', bgcolor: 'rgba(37, 211, 102, 0.04)' } }}
+            sx={{ color: '#25D366', borderColor: '#25D366', '&:hover': { borderColor: '#128C7E', bgcolor: 'rgba(37, 211, 102, 0.04)' } }}
           >
             Share
           </Button>
         </Stack>
       </Stack>
 
-      {/* Filter Card */}
-      <Card sx={{ mb: 4, borderRadius: 4, border: '1px solid', borderColor: 'divider' }} elevation={0}>
-        <CardContent sx={{ p: 3 }}>
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
-            <Filter size={20} color={alpha('#4f46e5', 0.7)} />
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Customize Report</Typography>
+      <Card sx={{ mb: 2, borderRadius: 1.5 }} elevation={0}>
+        <CardContent sx={{ py: 2, px: 2 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+            <Filter size={18} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: '0.8125rem' }}>Filters</Typography>
           </Stack>
           
-          <Grid container spacing={3}>
+          <Grid container spacing={2}>
             <Grid item xs={12} sm={6} md={3}>
               <TextField 
                 fullWidth label="From Date" type="date" value={filters.dateFrom}
@@ -271,29 +384,32 @@ const ReportsPage = () => {
         </CardContent>
       </Card>
 
-      <Box sx={{ width: '100%', mb: 3 }}>
+      <Box sx={{ width: '100%', mb: 2 }}>
         <Tabs 
           value={reportType} 
           onChange={(e, v) => setReportType(v)}
           variant="scrollable"
           scrollButtons="auto"
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
+          sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 40 }}
         >
-          <Tab value="sales" label="Sales Details" icon={<TrendingUp size={18} />} iconPosition="start" />
-          <Tab value="purchases" label="Purchase Details" icon={<Receipt size={18} />} iconPosition="start" />
-          <Tab value="items-sales" label="Item-wise Sales" icon={<TrendingUp size={18} />} iconPosition="start" />
-          <Tab value="items-purchase" label="Item-wise Purchases" icon={<Receipt size={18} />} iconPosition="start" />
-          <Tab value="gst" label="GST Summary" icon={<FileText size={18} />} iconPosition="start" />
+          <Tab value="sales" label="Sales" icon={<TrendingUp size={16} />} iconPosition="start" />
+          <Tab value="purchases" label="Purchases" icon={<Receipt size={16} />} iconPosition="start" />
+          <Tab value="items-sales" label="Item Sales" icon={<TrendingUp size={16} />} iconPosition="start" />
+          <Tab value="items-purchase" label="Item Purchases" icon={<Receipt size={16} />} iconPosition="start" />
+          <Tab value="gst" label="GST" icon={<FileText size={16} />} iconPosition="start" />
+          <Tab value="trial-balance" label="Trial Balance" icon={<FileText size={16} />} iconPosition="start" />
+          <Tab value="aged-receivables" label="Aged Rec." icon={<ArrowUpRight size={16} />} iconPosition="start" />
+          <Tab value="aged-payables" label="Aged Pay." icon={<ArrowDownRight size={16} />} iconPosition="start" />
         </Tabs>
       </Box>
 
       {/* Report View */}
-      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider' }}>
-        <Table sx={{ minWidth: 650 }}>
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+        <Table size="small" sx={{ minWidth: 650 }}>
           <TableHead>
             <TableRow>
               {reportConfig.columns.map((col, idx) => (
-                <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 800 }}>
+                <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 600, fontSize: '0.6875rem' }}>
                   {col.header}
                 </TableCell>
               ))}
@@ -311,21 +427,21 @@ const ReportsPage = () => {
             ))}
             {reportConfig.rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={reportConfig.columns.length} align="center" sx={{ py: 8 }}>
-                  <Stack alignItems="center" spacing={2} sx={{ opacity: 0.5 }}>
-                    <Search size={48} />
-                    <Typography variant="body1">No records found for the selected criteria</Typography>
+                <TableCell colSpan={reportConfig.columns.length} align="center" sx={{ py: 6 }}>
+                  <Stack alignItems="center" spacing={1} sx={{ opacity: 0.6 }}>
+                    <Search size={32} />
+                    <Typography variant="body2">No records for the selected criteria</Typography>
                   </Stack>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
           {reportConfig.rows.length > 0 && (
-            <TableHead sx={{ bgcolor: alpha('#4f46e5', 0.05) }}>
+            <TableHead sx={{ bgcolor: alpha(theme.palette.primary.main, 0.04) }}>
               <TableRow>
                 {reportConfig.columns.map((col, idx) => (
-                  <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 900, color: 'primary.main' }}>
-                    {col.isTotal ? `₹${reportConfig.totals[col.key].toFixed(2)}` : idx === 0 ? 'TOTAL' : ''}
+                  <TableCell key={idx} align={col.align || 'left'} sx={{ fontWeight: 600, fontSize: '0.75rem' }}>
+                    {col.isTotal && reportConfig.totals[col.key] != null ? `₹${Number(reportConfig.totals[col.key]).toFixed(2)}` : idx === 0 ? 'TOTAL' : ''}
                   </TableCell>
                 ))}
               </TableRow>

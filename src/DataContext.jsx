@@ -2,44 +2,42 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { firestore } from './db';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { getLocalData, setLocalData } from './indexedDB';
 
 const DataContext = createContext();
 
+const emptyData = () => ({
+  parties: [],
+  items: [],
+  sales: [],
+  purchases: [],
+  expenses: [],
+  opticals: [],
+  payments: [],
+  settings: [],
+  estimates: [],
+  creditNotes: [],
+  deliveryNotes: [],
+  journalEntries: []
+});
+
 export const DataProvider = ({ children }) => {
   const { currentUser, isAuthorized } = useAuth();
-  const [data, setData] = useState({
-    parties: [],
-    items: [],
-    sales: [],
-    purchases: [],
-    expenses: [],
-    opticals: [],
-    payments: [],
-    settings: []
-  });
+  const [data, setData] = useState(emptyData());
   const [allBusinessData, setAllBusinessData] = useState({});
   const [loading, setLoading] = useState(true);
   const [currentBusinessId, setCurrentBusinessId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const isUpdatingDataRef = useRef(false); // Prevent reload during data updates
+  const isUpdatingDataRef = useRef(false);
 
   useEffect(() => {
-    if (currentUser && isAuthorized) {
-      loadAllData();
-    } else {
-      setData({
-        parties: [],
-        items: [],
-        sales: [],
-        purchases: [],
-        expenses: [],
-        opticals: [],
-        payments: [],
-        settings: []
-      });
+    if (!currentUser || !isAuthorized) {
+      setData(emptyData());
       setAllBusinessData({});
       setLoading(false);
+      return;
     }
+    loadAllData();
   }, [currentUser, isAuthorized]);
 
   // Listen for business changes from localStorage
@@ -55,128 +53,146 @@ export const DataProvider = ({ children }) => {
     }
   }, [currentBusinessId, allBusinessData]);
 
+  const createDefaultBusinessData = () => ({
+    '1': {
+      id: 1,
+      name: 'My Accounting Business',
+      gstNumber: '',
+      address: '',
+      phone: '',
+      email: '',
+      state: 'Unknown',
+      logo: '',
+      qrCode: '',
+      data: emptyData()
+    }
+  });
+
   const loadAllData = async () => {
     if (!currentUser || !isAuthorized) return;
     try {
-      console.log('📂 Loading business data from Firestore...');
       setLoading(true);
-      const userDocRef = doc(firestore, 'users', currentUser.uid);
-      const userDoc = await getDoc(userDocRef);
-      
-      if (userDoc.exists()) {
-        const firestoreData = userDoc.data().businesses;
-        
-        if (firestoreData && typeof firestoreData === 'object') {
-          console.log('✅ Loaded businesses:', Object.keys(firestoreData));
-          setAllBusinessData(firestoreData);
-          
-          // Set currentBusinessId if not already set
-          const storedBusinessId = Number(localStorage.getItem('currentBusinessId'));
-          const businessIds = Object.values(firestoreData).map(b => b.id);
-          const validBusinessId = businessIds.includes(storedBusinessId) ? storedBusinessId : businessIds[0];
-          
-          if (validBusinessId) {
-            console.log('🔧 Setting current business ID:', validBusinessId);
-            setCurrentBusinessId(validBusinessId);
-            localStorage.setItem('currentBusinessId', validBusinessId.toString());
-          }
-        } else {
-          // Create default
-          const defaultData = createDefaultBusinessData();
-          setAllBusinessData(defaultData);
-          setCurrentBusinessId(1);
-          localStorage.setItem('currentBusinessId', '1');
-          await saveAllData(defaultData);
+      console.log('📂 Loading business data from IndexedDB...');
+      const local = await getLocalData(currentUser.uid);
+
+      if (local && typeof local === 'object' && Object.keys(local).length > 0) {
+        console.log('✅ Loaded businesses from IndexedDB:', Object.keys(local));
+        setAllBusinessData(local);
+        const storedBusinessId = Number(localStorage.getItem('currentBusinessId'));
+        const businessIds = Object.values(local).map(b => b.id);
+        const validBusinessId = businessIds.includes(storedBusinessId) ? storedBusinessId : businessIds[0];
+        if (validBusinessId) {
+          setCurrentBusinessId(validBusinessId);
+          localStorage.setItem('currentBusinessId', validBusinessId.toString());
         }
       } else {
-        // New user
         const defaultData = createDefaultBusinessData();
         setAllBusinessData(defaultData);
         setCurrentBusinessId(1);
         localStorage.setItem('currentBusinessId', '1');
-        await saveAllData(defaultData);
+        await saveToIndexedDB(defaultData);
       }
     } catch (error) {
       console.error('❌ Failed to load data:', error);
-      alert('Failed to load data: ' + error.message);
+      const defaultData = createDefaultBusinessData();
+      setAllBusinessData(defaultData);
+      setCurrentBusinessId(1);
+      localStorage.setItem('currentBusinessId', '1');
+      await saveToIndexedDB(defaultData);
     } finally {
       setLoading(false);
     }
   };
 
-  const createDefaultBusinessData = () => {
-    return {
-      '1': {
-        id: 1,
-        name: 'My Accounting Business',
-        gstNumber: '',
-        address: '',
-        phone: '',
-        email: '',
-        state: 'Unknown',
-        data: {
-          parties: [],
-          items: [],
-          sales: [],
-          purchases: [],
-          expenses: [],
-          opticals: [],
-          payments: [],
-          settings: []
-        }
+  const saveToIndexedDB = async (businessData) => {
+    if (!currentUser?.uid) return true;
+    try {
+      await setLocalData(currentUser.uid, businessData);
+      return true;
+    } catch (e) {
+      console.error('IndexedDB save failed:', e);
+      return false;
+    }
+  };
+
+  /** Called only when user clicks "Backup to Online" on Backup page. No automatic Firestore writes. */
+  const backupToFirestore = async (businessData) => {
+    if (!currentUser || !isAuthorized) return { success: false, error: 'Not authenticated' };
+    try {
+      const payload = businessData ?? allBusinessData;
+      const userDocRef = doc(firestore, 'users', currentUser.uid);
+      await setDoc(userDocRef, { businesses: payload }, { merge: true });
+      return { success: true };
+    } catch (error) {
+      console.error('Firestore backup failed:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  /** Restore from Firestore into IndexedDB (used when user chooses "Restore from Online"). */
+  const restoreFromFirestore = async () => {
+    if (!currentUser || !isAuthorized) return { success: false, error: 'Not authenticated' };
+    try {
+      const userDocRef = doc(firestore, 'users', currentUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      const firestoreData = userDoc.exists() ? userDoc.data().businesses : null;
+      if (!firestoreData || typeof firestoreData !== 'object') {
+        return { success: false, error: 'No backup found online' };
       }
-    };
+      setAllBusinessData(firestoreData);
+      await setLocalData(currentUser.uid, firestoreData);
+      const businessIds = Object.values(firestoreData).map(b => b.id);
+      const validId = businessIds[0];
+      if (validId) {
+        setCurrentBusinessId(validId);
+        localStorage.setItem('currentBusinessId', validId.toString());
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Restore from Firestore failed:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  /** Restore from a file payload (businesses object) into IndexedDB. Used by Backup page file restore. */
+  const restoreFromFile = async (businessData) => {
+    if (!currentUser?.uid) return { success: false, error: 'Not authenticated' };
+    if (!businessData || typeof businessData !== 'object' || Object.keys(businessData).length === 0) {
+      return { success: false, error: 'Invalid backup data' };
+    }
+    try {
+      setAllBusinessData(businessData);
+      await setLocalData(currentUser.uid, businessData);
+      const businessIds = Object.values(businessData).map(b => b.id);
+      const validId = businessIds[0];
+      if (validId) {
+        setCurrentBusinessId(validId);
+        localStorage.setItem('currentBusinessId', validId.toString());
+        const biz = businessData[String(validId)];
+        if (biz?.data) setData(biz.data);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Restore from file failed:', error);
+      return { success: false, error: error.message };
+    }
   };
 
   const loadBusinessData = (businessId) => {
     const businessKey = String(businessId);
     const business = allBusinessData[businessKey];
-    
     if (business && business.data) {
-      console.log('📊 Loading data for business:', business.name);
       setData(business.data);
     } else {
-      console.warn('⚠️ Business not found:', businessId);
-      setData({
-        parties: [],
-        items: [],
-        sales: [],
-        purchases: [],
-        expenses: [],
-        opticals: [],
-        payments: [],
-        settings: []
-      });
+      setData(emptyData());
     }
   };
 
   const saveAllData = async (businessData) => {
-    if (!currentUser || !isAuthorized) {
-      console.warn('⚠️ Cannot save: No user logged in or not authorized');
-      return false;
-    }
-    
-    if (saving) {
-      console.log('⏳ Save already in progress, but continuing...');
-      // Don't return false, just log - allow the save to proceed
-    }
-
+    if (!currentUser || !isAuthorized) return false;
     try {
       setSaving(true);
-      console.log('💾 Saving business data to Firestore...', {
-        userId: currentUser.uid,
-        businessCount: Object.keys(businessData).length
-      });
-      
-      const userDocRef = doc(firestore, 'users', currentUser.uid);
-      await setDoc(userDocRef, { businesses: businessData }, { merge: true });
-      
-      console.log('✅ Data saved successfully to Firestore');
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to save data:', error);
-      // Don't throw, just return false so the caller can handle it
-      return false;
+      return await saveToIndexedDB(businessData);
     } finally {
       setSaving(false);
     }
@@ -270,7 +286,7 @@ export const DataProvider = ({ children }) => {
     }
 
     // Validate businessId for all tables that require it
-    const tablesRequiringBusinessId = ['parties', 'items', 'sales', 'purchases', 'expenses', 'payments', 'opticals'];
+    const tablesRequiringBusinessId = ['parties', 'items', 'sales', 'purchases', 'expenses', 'payments', 'opticals', 'estimates', 'creditNotes', 'deliveryNotes', 'journalEntries'];
     if (tablesRequiringBusinessId.includes(table) && !item.businessId) {
       console.error(`❌ Invalid ${table} entry - missing businessId:`, item);
       return false;
@@ -422,6 +438,8 @@ export const DataProvider = ({ children }) => {
       phone: businessData.phone || '',
       email: businessData.email || '',
       state: businessData.state || 'Unknown',
+      logo: businessData.logo || '',
+      qrCode: businessData.qrCode || '',
       data: {
         parties: [],
         items: [],
@@ -430,7 +448,11 @@ export const DataProvider = ({ children }) => {
         expenses: [],
         opticals: [],
         payments: [],
-        settings: []
+        settings: [],
+        estimates: [],
+        creditNotes: [],
+        deliveryNotes: [],
+        journalEntries: []
       }
     };
 
@@ -524,7 +546,10 @@ export const DataProvider = ({ children }) => {
       currentBusinessId,
       addBusiness,
       updateBusiness,
-      deleteBusiness
+      deleteBusiness,
+      backupToFirestore,
+      restoreFromFirestore,
+      restoreFromFile
     }}>
       {children}
     </DataContext.Provider>
