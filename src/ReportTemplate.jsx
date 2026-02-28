@@ -27,13 +27,18 @@ const ReportTemplate = forwardRef(({ reportData, business, filters, title, paper
     }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 4px 0' }}>
-            {business.name}
-          </h1>
-          <p style={{ margin: '2px 0' }}>{business.address}</p>
-          <p style={{ margin: '2px 0' }}>Phone: {business.phone}</p>
-          {business.gstNumber && <p style={{ margin: '2px 0' }}>GSTIN: {business.gstNumber}</p>}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flex: 1 }}>
+          {business.logo && (
+            <img src={business.logo} alt="Logo" style={{ maxHeight: '64px', maxWidth: '140px', objectFit: 'contain' }} />
+          )}
+          <div>
+            <h1 style={{ fontSize: '22px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 4px 0' }}>
+              {business.name}
+            </h1>
+            <p style={{ margin: '2px 0' }}>{business.address}</p>
+            <p style={{ margin: '2px 0' }}>Phone: {business.phone}</p>
+            {business.gstNumber && <p style={{ margin: '2px 0' }}>GSTIN: {business.gstNumber}</p>}
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 4px 0', textTransform: 'uppercase' }}>

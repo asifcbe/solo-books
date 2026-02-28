@@ -30,12 +30,17 @@ const PaymentTemplate = forwardRef(({ data, business, paperSize = 'A4' }, ref) =
     }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', borderBottom: '2px solid #10b981', paddingBottom: '15px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', margin: '0 0 5px 0' }}>
-            {business.name}
-          </h1>
-          <p style={{ margin: '2px 0', fontSize: '12px' }}>{business.address}</p>
-          <p style={{ margin: '2px 0', fontSize: '12px' }}>Phone: {business.phone}</p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flex: 1 }}>
+          {business.logo && (
+            <img src={business.logo} alt="Logo" style={{ maxHeight: '64px', maxWidth: '140px', objectFit: 'contain' }} />
+          )}
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981', margin: '0 0 5px 0' }}>
+              {business.name}
+            </h1>
+            <p style={{ margin: '2px 0', fontSize: '12px' }}>{business.address}</p>
+            <p style={{ margin: '2px 0', fontSize: '12px' }}>Phone: {business.phone}</p>
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 5px 0', color: '#64748b' }}>

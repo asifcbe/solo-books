@@ -5,30 +5,33 @@ import {
   Tooltip, useTheme, useMediaQuery, Button, Dialog, DialogTitle, DialogContent, 
   DialogActions, TextField, Alert
 } from '@mui/material';
-import { 
-  Menu as MenuIcon, 
-  LayoutDashboard, 
-  Users, 
-  Package, 
-  ReceiptText, 
-  ShoppingBag, 
-  FileText, 
-  Settings, 
+import {
+  Menu as MenuIcon,
+  LayoutDashboard,
+  Users,
+  Package,
+  ReceiptText,
+  ShoppingBag,
+  FileText,
+  Settings,
   Database,
   ChevronLeft,
   Store,
   Plus,
   Download,
-  Upload,
   DollarSign,
-  Eye
+  Eye,
+  FileSearch,
+  RotateCcw,
+  Truck,
+  BookOpen
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useBusiness } from './BusinessContext';
 import { useAuth } from './AuthContext';
 import { useConfig } from './ConfigContext';
 
-const drawerWidth = 260;
+const drawerWidth = 220;
 
 const Layout = ({ children }) => {
   const theme = useTheme();
@@ -39,7 +42,7 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentBusiness, businesses, switchBusiness } = useBusiness();
-  const { logout, currentUser } = useAuth();
+  const { logout, currentUser, isAdmin } = useAuth();
   const { config } = useConfig();
 
   const handleDrawerToggle = () => setOpen(!open);
@@ -54,63 +57,66 @@ const Layout = ({ children }) => {
     ...(config.features?.purchases ? [{ text: 'Purchases', icon: <ShoppingBag size={20} />, path: '/purchases' }] : []),
     ...(config.features?.expenses ? [{ text: 'Expenses', icon: <DollarSign size={20} />, path: '/expenses' }] : []),
     ...(config.features?.opticals && config.businessType === 'opticals' ? [{ text: 'Opticals', icon: <Eye size={20} />, path: '/opticals' }] : []),
+    ...(config.features?.estimates ? [{ text: 'Estimates', icon: <FileSearch size={20} />, path: '/estimates' }] : []),
+    ...(config.features?.creditNotes ? [{ text: 'Credit Notes', icon: <RotateCcw size={20} />, path: '/credit-notes' }] : []),
+    ...(config.features?.deliveryNotes ? [{ text: 'Delivery Notes', icon: <Truck size={20} />, path: '/delivery-notes' }] : []),
+    ...(config.features?.journal ? [{ text: 'Journal', icon: <BookOpen size={20} />, path: '/journal' }] : []),
     ...(config.features?.payments ? [{ text: 'Payments', icon: <Download size={20} />, path: '/payment-in' }] : []),
     ...(config.features?.reports ? [{ text: 'Reports', icon: <FileText size={20} />, path: '/reports' }] : []),
     ...(config.features?.backup ? [{ text: 'Backup/Restore', icon: <Database size={20} />, path: '/backup' }] : []),
     ...(config.features?.settings ? [{ text: 'Settings', icon: <Settings size={20} />, path: '/settings' }] : []),
-    ...(currentUser ? [{ text: 'Admin', icon: <Settings size={20} />, path: '/admin' }] : []),
+    ...(currentUser && isAdmin ? [{ text: 'Admin', icon: <Settings size={20} />, path: '/admin' }] : []),
   ];
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Toolbar sx={{ px: [1], display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main', ml: 1 }}>
+      <Toolbar disableGutters sx={{ px: 1.5, minHeight: '48px !important', justifyContent: 'space-between' }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'primary.main' }}>
           Solo Books
         </Typography>
-        <IconButton onClick={handleDrawerToggle}>
-          <ChevronLeft />
-        </IconButton>
+        <IconButton size="small" onClick={handleDrawerToggle}><ChevronLeft size={18} /></IconButton>
       </Toolbar>
       <Divider />
-      <List sx={{ px: 1, py: 2 }}>
+      <List dense sx={{ px: 1, py: 1 }}>
         {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+          <ListItem key={item.text} disablePadding sx={{ mb: 0.25 }}>
             <ListItemButton 
+              dense
               onClick={() => navigate(item.path)}
               selected={location.pathname === item.path}
               sx={{ 
-                borderRadius: 2,
+                borderRadius: 1,
+                py: 0.75,
                 '&.Mui-selected': {
-                  bgcolor: 'primary.light',
+                  bgcolor: 'primary.main',
                   color: 'primary.contrastText',
-                  '&:hover': { bgcolor: 'primary.main' },
+                  '&:hover': { bgcolor: 'primary.dark' },
                   '& .MuiListItemIcon-root': { color: 'inherit' }
                 }
               }}
             >
-              <ListItemIcon sx={{ minWidth: 40, color: location.pathname === item.path ? 'inherit' : 'text.secondary' }}>
+              <ListItemIcon sx={{ minWidth: 36, color: location.pathname === item.path ? 'inherit' : 'text.secondary' }}>
                 {item.icon}
               </ListItemIcon>
-              <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: 500 }} />
+              <ListItemText primary={item.text} primaryTypographyProps={{ fontSize: '0.8125rem', fontWeight: 500 }} />
             </ListItemButton>
           </ListItem>
         ))}
       </List>
       {config.multiBusiness && (
-        <Box sx={{ mt: 'auto', p: 2 }}>
-          <Divider sx={{ mb: 2 }} />
+        <Box sx={{ mt: 'auto', p: 1.5 }}>
+          <Divider sx={{ mb: 1.5 }} />
           <ListItemButton 
+            dense
             onClick={handleMenuOpen}
-            sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
+            sx={{ borderRadius: 1, border: '1px solid', borderColor: 'divider', py: 0.75 }}
           >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <Store size={20} />
-            </ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 36 }}><Store size={18} /></ListItemIcon>
             <ListItemText 
               primary={currentBusiness?.name || 'Select Business'} 
-              secondary="Switch Business"
-              primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 600, noWrap: true }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+              secondary="Switch"
+              primaryTypographyProps={{ fontSize: '0.75rem', fontWeight: 600, noWrap: true }}
+              secondaryTypographyProps={{ fontSize: '0.6875rem' }}
             />
           </ListItemButton>
         </Box>
@@ -180,27 +186,23 @@ const Layout = ({ children }) => {
           borderColor: 'divider',
         }}
       >
-        <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
+        <Toolbar disableGutters sx={{ minHeight: '48px !important', px: 1.5 }}>
           <IconButton
             color="inherit"
+            size="small"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { xs: open ? 'none' : 'inline-flex', md: open ? 'none' : 'inline-flex' } }}
+            sx={{ mr: 1, display: { xs: open ? 'none' : 'inline-flex', md: open ? 'none' : 'inline-flex' } }}
           >
-            <MenuIcon />
+            <MenuIcon size={20} />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' }, flexGrow: 1 }}>
+          <Typography variant="subtitle1" noWrap component="div" sx={{ fontWeight: 600, flexGrow: 1, fontSize: '0.9375rem' }}>
             {menuItems.find(i => i.path === location.pathname)?.text || 'Accounting'}
           </Typography>
-          <Typography variant="body2" sx={{ mr: 2, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
-            {currentUser?.username} @ {currentBusiness?.name}
+          <Typography variant="caption" sx={{ mr: 1.5, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
+            {currentBusiness?.name}
           </Typography>
-          <Button 
-            variant="outlined" 
-            size="small" 
-            onClick={logout}
-            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
-          >
+          <Button variant="outlined" size="small" onClick={logout} sx={{ fontSize: '0.75rem', py: 0.5 }}>
             Logout
           </Button>
         </Toolbar>
@@ -230,10 +232,10 @@ const Layout = ({ children }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: { xs: 1, sm: 2, md: 3 },
+          p: { xs: 1, sm: 1.5, md: 2 },
           width: { xs: '100%', md: `calc(100% - ${open ? drawerWidth : 0}px)` },
-          mt: { xs: 7, sm: 8 },
-          transition: 'margin 0.3s',
+          mt: '48px',
+          transition: 'margin 0.2s',
         }}
       >
         {children}

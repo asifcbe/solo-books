@@ -17,7 +17,9 @@ export const BusinessProvider = ({ children }) => {
     address: b.address,
     phone: b.phone,
     email: b.email,
-    state: b.state
+    state: b.state,
+    logo: b.logo || '',
+    qrCode: b.qrCode || ''
   }));
   
   const currentBusiness = businesses.find(b => b.id === currentBusinessId) || businesses[0];

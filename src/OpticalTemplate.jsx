@@ -47,13 +47,18 @@ const OpticalTemplate = forwardRef(({ data, business, paperSize = 'A4' }, ref) =
     }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '40px', borderBottom: '2px solid #1976d2', paddingBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 5px 0' }}>
-            {business.name}
-          </h1>
-          <p style={{ margin: '2px 0', fontSize: '14px' }}>{business.address}</p>
-          <p style={{ margin: '2px 0', fontSize: '14px' }}>Phone: {business.phone}</p>
-          {business.gstNumber && <p style={{ margin: '2px 0', fontSize: '14px' }}>GSTIN: {business.gstNumber}</p>}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flex: 1 }}>
+          {business.logo && (
+            <img src={business.logo} alt="Logo" style={{ maxHeight: '64px', maxWidth: '140px', objectFit: 'contain' }} />
+          )}
+          <div>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1976d2', margin: '0 0 5px 0' }}>
+              {business.name}
+            </h1>
+            <p style={{ margin: '2px 0', fontSize: '14px' }}>{business.address}</p>
+            <p style={{ margin: '2px 0', fontSize: '14px' }}>Phone: {business.phone}</p>
+            {business.gstNumber && <p style={{ margin: '2px 0', fontSize: '14px' }}>GSTIN: {business.gstNumber}</p>}
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0 0 10px 0', color: '#64748b' }}>

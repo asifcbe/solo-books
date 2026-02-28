@@ -183,13 +183,9 @@ const ItemsPage = () => {
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>Items / Inventory</Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<Plus size={18} />} 
-          onClick={() => handleOpen()}
-        >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Items / Inventory</Typography>
+        <Button variant="contained" size="small" startIcon={<Plus size={16} />} onClick={() => handleOpen()}>
           Add Item
         </Button>
       </Box>

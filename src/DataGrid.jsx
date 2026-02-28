@@ -134,14 +134,14 @@ const DataGrid = ({
       <CardContent sx={{ p: 0 }}>
         {/* Header */}
         {(title || enableSearch || enableFilters) && (
-          <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             {title && (
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5, fontSize: '0.875rem' }}>
                 {title}
               </Typography>
             )}
 
-            <Grid container spacing={2} alignItems="center">
+            <Grid container spacing={1.5} alignItems="center">
               {enableSearch && (
                 <Grid item xs={12} sm={6} md={4}>
                   <TextField
@@ -202,8 +202,8 @@ const DataGrid = ({
         {/* Filters Panel */}
         {enableFilters && (
           <Collapse in={showFilters}>
-            <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
-              <Grid container spacing={2}>
+            <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+              <Grid container spacing={1.5}>
                 {columns.map(col => {
                   if (!col.filterable) return null;
 
@@ -288,7 +288,7 @@ const DataGrid = ({
 
         {/* Table */}
         <TableContainer sx={{ maxHeight: enablePagination ? height : 'none' }}>
-          <Table stickyHeader size="small">
+          <Table stickyHeader size="small" sx={{ '& .MuiTableCell-root': { py: '6px' } }}>
             <TableHead>
               <TableRow sx={{ bgcolor: 'background.default' }}>
                 {columns.map(col => (

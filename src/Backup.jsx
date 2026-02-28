@@ -1,18 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, Button, Card, CardContent, Typography, Grid, 
-  CircularProgress, Alert, Paper, List, ListItem, ListItemIcon, ListItemText,
-  TextField, Switch, FormControlLabel, InputAdornment, IconButton
+import {
+  Box, Button, Card, CardContent, Typography, Grid,
+  CircularProgress, Alert, Paper, TextField, Switch, FormControlLabel,
+  InputAdornment
 } from '@mui/material';
-import { Download, Upload, ShieldCheck, AlertCircle, FileJson, FolderOpen, Folder } from 'lucide-react';
+import { Download, Upload, CloudUpload, CloudDownload, AlertCircle, Folder } from 'lucide-react';
 import { useData } from './DataContext';
 
-const BackupPage = () => {
-  const { data, addItem, updateItem, deleteItem } = useData();
+const Backup = () => {
+  const {
+    data,
+    allBusinessData,
+    addItem,
+    deleteItem,
+    reloadData,
+    backupToFirestore,
+    restoreFromFirestore,
+    restoreFromFile
+  } = useData();
+
   const [loading, setLoading] = useState(false);
+  const [onlineLoading, setOnlineLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [autoBackup, setAutoBackup] = useState(() => localStorage.getItem('autoBackup') === 'true');
-  const [backupFolder, setBackupFolder] = useState(() => localStorage.getItem('backupFolder') || 'C:\\Backups');
+  const [backupFolder, setBackupFolder] = useState(() => localStorage.getItem('backupFolder') || '');
 
   useEffect(() => {
     localStorage.setItem('autoBackup', autoBackup);
@@ -22,45 +33,34 @@ const BackupPage = () => {
     localStorage.setItem('backupFolder', backupFolder);
   }, [backupFolder]);
 
-  // Auto backup on close
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (autoBackup) {
-        exportDataSync();
+      if (autoBackup && allBusinessData && Object.keys(allBusinessData).length > 0) {
+        try {
+          const payload = JSON.stringify({ businesses: allBusinessData, exportedAt: new Date().toISOString() });
+          localStorage.setItem('solobooks_autobackup', payload);
+        } catch (_) {}
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [autoBackup]);
-
-  const exportDataSync = () => {
-    // Synchronous version for beforeunload
-    const data = {};
-    db.tables.forEach(table => {
-      // This is async, but for beforeunload we can't wait
-      // In practice, this might not work perfectly, but it's a start
-    });
-  };
+  }, [autoBackup, allBusinessData]);
 
   const exportData = async () => {
     setLoading(true);
+    setMessage({ type: '', text: '' });
     try {
-      const exportData = {
-        businesses: data.businesses || [],
-        parties: data.parties || [],
-        items: data.items || [],
-        transactions: data.transactions || [],
-        expenses: data.expenses || [],
-        opticals: data.opticals || []
+      const payload = {
+        businesses: allBusinessData,
+        exportedAt: new Date().toISOString()
       };
-      
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `solobooks_backup_${new Date().toISOString().split('T')[0]}.json`;
       link.click();
-      
+      URL.revokeObjectURL(url);
       setMessage({ type: 'success', text: 'Backup exported successfully!' });
     } catch (error) {
       setMessage({ type: 'error', text: 'Export failed: ' + error.message });
@@ -69,146 +69,228 @@ const BackupPage = () => {
   };
 
   const importData = async (event) => {
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file) return;
-
     if (!window.confirm('This will overwrite current data. Are you sure?')) return;
 
     setLoading(true);
+    setMessage({ type: '', text: '' });
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const importData = JSON.parse(e.target.result);
-        
-        // Clear existing data
-        (data.businesses || []).forEach(item => deleteItem('businesses', item.id));
-        (data.parties || []).forEach(item => deleteItem('parties', item.id));
-        (data.items || []).forEach(item => deleteItem('items', item.id));
-        (data.transactions || []).forEach(item => deleteItem('transactions', item.id));
-        (data.expenses || []).forEach(item => deleteItem('expenses', item.id));
-        (data.opticals || []).forEach(item => deleteItem('opticals', item.id));
-        
-        // Add imported data
-        (importData.businesses || []).forEach(item => addItem('businesses', item));
-        (importData.parties || []).forEach(item => addItem('parties', item));
-        (importData.items || []).forEach(item => addItem('items', item));
-        (importData.transactions || []).forEach(item => addItem('transactions', item));
-        (importData.expenses || []).forEach(item => addItem('expenses', item));
-        (importData.opticals || []).forEach(item => addItem('opticals', item));
-        
-        setMessage({ type: 'success', text: 'Backup restored successfully! Please refresh the page.' });
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const businesses = parsed.businesses && typeof parsed.businesses === 'object' ? parsed.businesses : null;
+
+      if (businesses && Object.keys(businesses).length > 0) {
+        const result = await restoreFromFile(businesses);
+        if (result.success) {
+          setMessage({ type: 'success', text: 'Full backup restored from file (all businesses).' });
+        } else {
+          setMessage({ type: 'error', text: result.error || 'Restore failed.' });
+        }
         setLoading(false);
-      };
-      reader.readAsText(file);
+        event.target.value = '';
+        return;
+      }
+
+      const parties = parsed.parties || [];
+      const items = parsed.items || [];
+      const sales = parsed.sales || parsed.transactions || [];
+      const purchases = parsed.purchases || [];
+      const expenses = parsed.expenses || [];
+      const opticals = parsed.opticals || [];
+      const payments = parsed.payments || [];
+
+      const currentParties = data.parties || [];
+      const currentItems = data.items || [];
+      const currentSales = data.sales || [];
+      const currentPurchases = data.purchases || [];
+      const currentExpenses = data.expenses || [];
+      const currentOpticals = data.opticals || [];
+      const currentPayments = data.payments || [];
+
+      for (const p of currentParties) await deleteItem('parties', p.id);
+      for (const i of currentItems) await deleteItem('items', i.id);
+      for (const s of currentSales) await deleteItem('sales', s.id);
+      for (const p of currentPurchases) await deleteItem('purchases', p.id);
+      for (const e of currentExpenses) await deleteItem('expenses', e.id);
+      for (const o of currentOpticals) await deleteItem('opticals', o.id);
+      for (const p of currentPayments) await deleteItem('payments', p.id);
+
+      for (const p of parties) await addItem('parties', p);
+      for (const i of items) await addItem('items', i);
+      for (const s of sales) await addItem('sales', s);
+      for (const p of purchases) await addItem('purchases', p);
+      for (const e of expenses) await addItem('expenses', e);
+      for (const o of opticals) await addItem('opticals', o);
+      for (const p of payments) await addItem('payments', p);
+
+      setMessage({ type: 'success', text: 'Backup restored successfully! Data is in IndexedDB.' });
     } catch (error) {
       setMessage({ type: 'error', text: 'Restore failed: ' + error.message });
-      setLoading(false);
     }
+    setLoading(false);
+    event.target.value = '';
+  };
+
+  const handleBackupToOnline = async () => {
+    setOnlineLoading(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const result = await backupToFirestore();
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Data backed up to online database (Firestore) successfully!' });
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Backup to online failed.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err?.message || 'Backup to online failed.' });
+    }
+    setOnlineLoading(false);
+  };
+
+  const handleRestoreFromOnline = async () => {
+    if (!window.confirm('This will replace your local (IndexedDB) data with the last online backup. Continue?')) return;
+    setOnlineLoading(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const result = await restoreFromFirestore();
+      if (result.success) {
+        setMessage({ type: 'success', text: 'Restored from online backup. Reloading...' });
+        await reloadData();
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Restore from online failed.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err?.message || 'Restore from online failed.' });
+    }
+    setOnlineLoading(false);
   };
 
   return (
-    <Box sx={{ maxWidth: 1000, mx: 'auto', p: 4 }}>
-      <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>Data Management & Backup</Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        Secure your business data with regular backups and restore when needed.
+    <Box sx={{ maxWidth: 900, mx: 'auto' }}>
+      <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem', mb: 1 }}>Backup &amp; Restore</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+        Data is stored locally. Export a file or back up to the online database when needed.
       </Typography>
 
       {message.text && (
-        <Alert severity={message.type} sx={{ mb: 4 }}>{message.text}</Alert>
+        <Alert severity={message.type} sx={{ mb: 2 }} onClose={() => setMessage({ type: '', text: '' })}>
+          {message.text}
+        </Alert>
       )}
 
-      <Grid container spacing={4}>
-        <Grid item xs={12} md={6}>
-          <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-            <CardContent sx={{ textAlign: 'center', py: 5 }}>
-              <Box sx={{ color: 'primary.main', mb: 3 }}><Download size={56} /></Box>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Export Backup</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                Download all your business data, parties, and transactions into a secure JSON file.
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 2, px: 2, textAlign: 'center' }}>
+              <Box sx={{ color: 'primary.main', mb: 1 }}><Download size={40} /></Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Export to File</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Download JSON backup
               </Typography>
-              <Button 
-                variant="contained" 
-                fullWidth 
+              <Button
+                fullWidth
+                variant="contained"
+                size="small"
                 onClick={exportData}
                 disabled={loading}
-                startIcon={loading ? <CircularProgress size={20} /> : <Download size={20} />}
-                sx={{ borderRadius: 2, py: 1.5 }}
+                startIcon={loading ? <CircularProgress size={16} /> : <Download size={16} />}
               >
-                Download Backup
+                Download
               </Button>
             </CardContent>
           </Card>
         </Grid>
 
-        <Grid item xs={12} md={6}>
-          <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-            <CardContent sx={{ textAlign: 'center', py: 5 }}>
-              <Box sx={{ color: 'secondary.main', mb: 3 }}><Upload size={56} /></Box>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 700 }}>Restore Backup</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-                Restore your data from a previously exported JSON file. Current data will be replaced.
+        <Grid item xs={12} sm={6} md={3}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 2, px: 2, textAlign: 'center' }}>
+              <Box sx={{ color: 'secondary.main', mb: 1 }}><Upload size={40} /></Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Restore from File</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Upload JSON file
               </Typography>
-              <Button 
-                variant="outlined" 
-                fullWidth 
+              <Button
+                fullWidth
+                variant="outlined"
+                size="small"
                 component="label"
                 disabled={loading}
-                startIcon={loading ? <CircularProgress size={20} /> : <Upload size={20} />}
-                sx={{ borderRadius: 2, py: 1.5 }}
+                startIcon={loading ? <CircularProgress size={16} /> : <Upload size={16} />}
               >
-                Upload & Restore
+                Upload
                 <input type="file" hidden accept=".json" onChange={importData} />
               </Button>
             </CardContent>
           </Card>
         </Grid>
 
+        <Grid item xs={12} sm={6} md={3}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 2, px: 2, textAlign: 'center' }}>
+              <Box sx={{ color: 'info.main', mb: 1 }}><CloudUpload size={40} /></Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Backup to Online</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Save to Firestore
+              </Typography>
+              <Button
+                fullWidth
+                variant="contained"
+                color="info"
+                size="small"
+                onClick={handleBackupToOnline}
+                disabled={onlineLoading}
+                startIcon={onlineLoading ? <CircularProgress size={16} /> : <CloudUpload size={16} />}
+              >
+                Backup Online
+              </Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={3}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 2, px: 2, textAlign: 'center' }}>
+              <Box sx={{ color: 'info.dark', mb: 1 }}><CloudDownload size={40} /></Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>Restore from Online</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                Load from Firestore
+              </Typography>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="info"
+                size="small"
+                onClick={handleRestoreFromOnline}
+                disabled={onlineLoading}
+                startIcon={onlineLoading ? <CircularProgress size={16} /> : <CloudDownload size={16} />}
+              >
+                Restore Online
+              </Button>
+            </CardContent>
+          </Card>
+        </Grid>
+
         <Grid item xs={12}>
-          <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-            <CardContent sx={{ p: 4 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Backup Settings</Typography>
-              <Grid container spacing={3}>
+          <Card elevation={0} sx={{ borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+            <CardContent sx={{ py: 2, px: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1.5 }}>Options</Typography>
+              <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} md={8}>
                   <TextField
                     fullWidth
-                    label="Backup Folder Path"
+                    size="small"
+                    label="Backup folder hint"
                     value={backupFolder}
                     onChange={(e) => setBackupFolder(e.target.value)}
-                    helperText="Enter the path where backup files should be saved. Files are downloaded to your browser's default download folder."
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Folder size={20} />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton 
-                            size="small" 
-                            onClick={() => {
-                              const defaultPath = `C:\\Users\\${process.env.USERNAME || 'User'}\\Documents\\SoloBooks_Backups`;
-                              setBackupFolder(defaultPath);
-                            }}
-                            title="Set default backup path"
-                          >
-                            <FolderOpen size={18} />
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
+                    helperText="Reminder where you save backups."
+                    InputProps={{ startAdornment: <InputAdornment position="start"><Folder size={18} /></InputAdornment> }}
                   />
                 </Grid>
                 <Grid item xs={12} md={4}>
                   <FormControlLabel
-                    control={
-                      <Switch
-                        checked={autoBackup}
-                        onChange={(e) => setAutoBackup(e.target.checked)}
-                        color="primary"
-                      />
-                    }
-                    label="Auto-backup on app close"
-                    sx={{ mt: 2 }}
+                    control={<Switch checked={autoBackup} onChange={(e) => setAutoBackup(e.target.checked)} color="primary" />}
+                    label={<Typography variant="body2">Snapshot on close</Typography>}
                   />
                 </Grid>
               </Grid>
@@ -217,15 +299,13 @@ const BackupPage = () => {
         </Grid>
       </Grid>
 
-      <Paper sx={{ mt: 4, p: 3, bgcolor: '#fff4e5', borderRadius: 3 }} variant="outlined">
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <AlertCircle color="#663c00" size={24} />
+      <Paper sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1.5 }} variant="outlined">
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+          <AlertCircle size={20} color="text.secondary" />
           <Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#663c00' }}>
-              Why Backup Regularly?
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Since this app works offline and stores data in your browser's IndexedDB, clearing your browser cache or switching devices might cause data loss. Always keep a backup in a safe place.
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>Why backup?</Typography>
+            <Typography variant="caption" color="text.secondary" display="block">
+              Data is in IndexedDB. Use &quot;Backup to Online&quot; or &quot;Download&quot; to keep a copy.
             </Typography>
           </Box>
         </Box>
@@ -234,4 +314,4 @@ const BackupPage = () => {
   );
 };
 
-export default BackupPage;
+export default Backup;

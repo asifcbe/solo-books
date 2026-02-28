@@ -208,10 +208,10 @@ const ExpensesPage = () => {
       <div style={{ display: 'none' }}>
         <ExpenseTemplate ref={printRef} data={printingData} business={currentBusiness} paperSize={paperSize} />
       </div>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>Expenses</Typography>
-          <Typography variant="body2" color="text.secondary">Track and manage your business expenses</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>Expenses</Typography>
+          <Typography variant="caption" color="text.secondary">Track and manage expenses</Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <TextField
@@ -251,7 +251,7 @@ const ExpensesPage = () => {
         </Box>
       </Box>
 
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={4}>
           <Card 
             elevation={0} 
@@ -288,7 +288,7 @@ const ExpensesPage = () => {
         </Grid>
       </Grid>
 
-      <Card sx={{ mb: 4 }}>
+      <Card sx={{ mb: 2 }}>
         <CardContent>
           <TextField
             fullWidth

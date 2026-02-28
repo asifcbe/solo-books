@@ -20,6 +20,10 @@ import Settings from './Settings';
 import PaymentEntry from './PaymentEntry';
 import Expenses from './Expenses';
 import Opticals from './Opticals';
+import Estimates from './Estimates';
+import CreditNotes from './CreditNotes';
+import DeliveryNotes from './DeliveryNotes';
+import Journal from './Journal';
 const AppContent = () => {
   const { isAuthenticated, loading, isAuthorized, authError, isAdmin, logout } = useAuth();
   const { currentBusiness } = useBusiness();
@@ -89,6 +93,10 @@ const AppContent = () => {
       {config.features?.purchases && <Route path="/purchases" element={<Layout><Sales mode="purchase" /></Layout>} />}
       {config.features?.expenses && <Route path="/expenses" element={<Layout><Expenses /></Layout>} />}
       {config.features?.opticals && config.businessType === 'opticals' && <Route path="/opticals" element={<Layout><Opticals /></Layout>} />}
+      {config.features?.estimates && <Route path="/estimates" element={<Layout><Estimates /></Layout>} />}
+      {config.features?.creditNotes && <Route path="/credit-notes" element={<Layout><CreditNotes /></Layout>} />}
+      {config.features?.deliveryNotes && <Route path="/delivery-notes" element={<Layout><DeliveryNotes /></Layout>} />}
+      {config.features?.journal && <Route path="/journal" element={<Layout><Journal /></Layout>} />}
       {config.features?.payments && <Route path="/payment-in" element={<Layout><PaymentEntry mode="payment-in" /></Layout>} />}
       {config.features?.payments && <Route path="/payment-out" element={<Layout><PaymentEntry mode="payment-out" /></Layout>} />}
       {config.features?.reports && <Route path="/reports" element={<Layout><Reports /></Layout>} />}

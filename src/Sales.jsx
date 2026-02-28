@@ -3,9 +3,10 @@ import {
   Box, Button, Card, CardContent, Typography, TextField, Grid, 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
   Paper, IconButton, MenuItem, Divider, Autocomplete, InputAdornment, Chip,
-  TablePagination, FormControlLabel, Switch, alpha
+  TablePagination, FormControlLabel, Switch, alpha, ToggleButton, ToggleButtonGroup,
+  Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText
 } from '@mui/material';
-import { Plus, Trash2, Printer, Save, ChevronLeft, Receipt, ShoppingBasket, Edit, Share2, Calendar, User, Phone } from 'lucide-react';
+import { Plus, Trash2, Printer, Save, ChevronLeft, Receipt, ShoppingBasket, Edit, Share2, Calendar, User, Phone, Package, Users } from 'lucide-react';
 import { useBusiness } from './BusinessContext';
 import { useData } from './DataContext';
 import { useReactToPrint } from 'react-to-print';
@@ -21,12 +22,23 @@ const SalesPage = ({ mode = 'sales' }) => {
   const [selectedParty, setSelectedParty] = useState(null);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [items, setItems] = useState([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+  const [items, setItems] = useState([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, discountPercent: 0, total: 0 }]);
   const [description, setDescription] = useState('');
   const [noGST, setNoGST] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState(0);
   const [printingTx, setPrintingTx] = useState(null);
   const [paperSize, setPaperSize] = useState('A4');
   const printRef = useRef();
+  const bulkPrintRef = useRef();
+
+  const [bulkPrintOpen, setBulkPrintOpen] = useState(false);
+  const [bulkPrintDateFrom, setBulkPrintDateFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [bulkPrintDateTo, setBulkPrintDateTo] = useState(() => new Date().toISOString().split('T')[0]);
+  const [isBulkPrinting, setIsBulkPrinting] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -43,6 +55,7 @@ const SalesPage = ({ mode = 'sales' }) => {
     status: 'all' // all, completed
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [entryMode, setEntryMode] = useState('customer'); // 'customer' | 'product' — sales only
 
   // Pagination states
   const [page, setPage] = useState(0);
@@ -50,6 +63,9 @@ const SalesPage = ({ mode = 'sales' }) => {
 
   const handlePrint = useReactToPrint({
     contentRef: printRef,
+  });
+  const handleBulkPrint = useReactToPrint({
+    contentRef: bulkPrintRef,
   });
 
   // Queries
@@ -85,16 +101,58 @@ const SalesPage = ({ mode = 'sales' }) => {
     })
     .reverse();
 
+  // Group sales by customer for bulk print (sales only, within selected date range)
+  const bulkPrintQueue = React.useMemo(() => {
+    if (!isSale || !currentBusiness?.id) return [];
+    const from = bulkPrintDateFrom ? new Date(bulkPrintDateFrom + 'T00:00:00') : null;
+    const to = bulkPrintDateTo ? new Date(bulkPrintDateTo + 'T23:59:59.999') : null;
+    const allSales = getItems('sales')
+      .filter(tx => tx.businessId === currentBusiness.id)
+      .filter(tx => {
+        if (!from && !to) return true;
+        const d = new Date(tx.date + 'T12:00:00');
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    const byParty = {};
+    allSales.forEach(tx => {
+      const key = tx.partyId;
+      if (!byParty[key]) byParty[key] = { partyId: tx.partyId, partyName: tx.partyName, transactions: [] };
+      byParty[key].transactions.push(tx);
+    });
+    return Object.values(byParty).sort((a, b) => (a.partyName || '').localeCompare(b.partyName || ''));
+  }, [isSale, currentBusiness?.id, bulkPrintDateFrom, bulkPrintDateTo, getItems]);
+
+  // Single bulk print: one document with all customers' bills (page breaks between each invoice and between customers)
+  const handleBulkPrintClick = () => {
+    if (bulkPrintQueue.length === 0) return;
+    setIsBulkPrinting(true);
+    setTimeout(() => {
+      handleBulkPrint();
+      setIsBulkPrinting(false);
+    }, 300);
+  };
+
+  const bulkPrintFlatList = React.useMemo(() => {
+    const list = [];
+    bulkPrintQueue.forEach(group => {
+      group.transactions.forEach(tx => list.push(tx));
+    });
+    return list;
+  }, [bulkPrintQueue]);
+
   useEffect(() => {
     // Only reset form when switching to create view AND not currently saving
     if (view === 'create' && !savingRef.current && !isSaving) {
       const prefix = isSale ? 'INV' : 'BILL';
       setInvoiceNumber(`${prefix}-${Date.now().toString().slice(-6)}`);
-      setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]);
+      setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, discountPercent: 0, total: 0 }]);
       setSelectedParty(null);
       setInvoiceDate(new Date().toISOString().split('T')[0]);
       setDescription('');
       setNoGST(false);
+      setDiscountPercent(0);
       setEditId(null);
     }
   }, [view, isSale, isSaving]);
@@ -108,7 +166,7 @@ const SalesPage = ({ mode = 'sales' }) => {
   const addItemRow = () => {
     setItems([
       ...items,
-      { itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 },
+      { itemId: '', name: '', qty: 1, price: 0, taxRate: 0, discountPercent: 0, total: 0 },
     ]);
   };
 
@@ -117,7 +175,7 @@ const SalesPage = ({ mode = 'sales' }) => {
     setItems(
       newItems.length
         ? newItems
-        : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, total: 0 }]
+        : [{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, discountPercent: 0, total: 0 }]
     );
   };
 
@@ -134,25 +192,34 @@ const SalesPage = ({ mode = 'sales' }) => {
       }
     }
 
-    item.total = item.qty * item.price * (1 + item.taxRate / 100);
+    const lineAfterItemDiscount = item.qty * item.price * (1 - (item.discountPercent || 0) / 100);
+    item.total = lineAfterItemDiscount * (1 + (item.taxRate || 0) / 100);
     newItems[index] = item;
     setItems(newItems);
   };
 
   const calculateSubtotal = () =>
-    items.reduce((sum, item) => sum + item.qty * item.price, 0);
+    items.reduce((sum, item) => sum + item.qty * item.price * (1 - (item.discountPercent || 0) / 100), 0);
+
+  const calculateDiscountAmount = () =>
+    calculateSubtotal() * ((discountPercent || 0) / 100);
 
   const calculateTax = () => {
     if (noGST) return 0;
     return items.reduce(
-      (sum, item) => sum + item.qty * item.price * (item.taxRate / 100),
+      (sum, item) => {
+        const lineAfterItemDiscount = item.qty * item.price * (1 - (item.discountPercent || 0) / 100);
+        return sum + lineAfterItemDiscount * ((item.taxRate || 0) / 100);
+      },
       0
     );
   };
 
-  const calculateTotal = () => calculateSubtotal() + calculateTax();
+  const calculateTotal = () =>
+    calculateSubtotal() - calculateDiscountAmount() + calculateTax();
 
-  const handleSave = async () => {
+  const handleSave = async (options = {}) => {
+    const { saveAndCreateNew = false } = options;
     // Prevent multiple simultaneous saves using ref
     if (savingRef.current) {
       console.log('⚠️ Save already in progress, ignoring duplicate call');
@@ -169,6 +236,7 @@ const SalesPage = ({ mode = 'sales' }) => {
       const currentItems = [...items];
       const currentDescription = description;
       const currentNoGST = noGST;
+      const currentDiscountPercent = discountPercent ?? 0;
       const currentEditId = editId;
       const currentIsSale = isSale;
       const currentBusinessId = currentBusiness?.id;
@@ -206,12 +274,19 @@ const SalesPage = ({ mode = 'sales' }) => {
       }
 
       // Prepare transaction data with captured values
-      const finalSubtotal = currentItems.reduce((sum, item) => sum + item.qty * item.price, 0);
-      const finalTaxAmount = currentNoGST ? 0 : currentItems.reduce(
-        (sum, item) => sum + item.qty * item.price * (item.taxRate / 100),
+      const finalSubtotal = currentItems.reduce(
+        (sum, item) => sum + item.qty * item.price * (1 - (item.discountPercent || 0) / 100),
         0
       );
-      const finalTotalAmount = finalSubtotal + finalTaxAmount;
+      const finalDiscountAmount = finalSubtotal * (currentDiscountPercent / 100);
+      const finalTaxAmount = currentNoGST ? 0 : currentItems.reduce(
+        (sum, item) => {
+          const lineAfterItemDiscount = item.qty * item.price * (1 - (item.discountPercent || 0) / 100);
+          return sum + lineAfterItemDiscount * ((item.taxRate || 0) / 100);
+        },
+        0
+      );
+      const finalTotalAmount = finalSubtotal - finalDiscountAmount + finalTaxAmount;
 
       // stricter: only keep items which have an itemId and positive qty
       const cleanedItems = currentItems
@@ -219,6 +294,7 @@ const SalesPage = ({ mode = 'sales' }) => {
         .map(item => ({
           ...item,
           taxRate: currentNoGST ? 0 : item.taxRate,
+          discountPercent: item.discountPercent ?? 0,
         }));
 
       // Validate items
@@ -247,6 +323,8 @@ const SalesPage = ({ mode = 'sales' }) => {
         items: cleanedItems,
         description: currentDescription || '',
         noGST: currentNoGST,
+        discountPercent: currentDiscountPercent,
+        discountAmount: finalDiscountAmount,
         subtotal: finalSubtotal,
         taxAmount: finalTaxAmount,
         totalAmount: finalTotalAmount,
@@ -353,8 +431,21 @@ const SalesPage = ({ mode = 'sales' }) => {
       }
 
       // Only update UI state after everything succeeds
-      setView('list');
-      setEditId(null);
+      if (saveAndCreateNew) {
+        const prefix = currentIsSale ? 'INV' : 'BILL';
+        setInvoiceNumber(`${prefix}-${Date.now().toString().slice(-6)}`);
+        setItems([{ itemId: '', name: '', qty: 1, price: 0, taxRate: 0, discountPercent: 0, total: 0 }]);
+        setSelectedParty(null);
+        setInvoiceDate(new Date().toISOString().split('T')[0]);
+        setDescription('');
+        setNoGST(false);
+        setDiscountPercent(0);
+        setEditId(null);
+        setView('create');
+      } else {
+        setView('list');
+        setEditId(null);
+      }
     } catch (error) {
       console.error('Error saving transaction:', error);
       alert('An error occurred while saving. Please try again.');
@@ -416,9 +507,10 @@ const SalesPage = ({ mode = 'sales' }) => {
     );
     setInvoiceDate(tx.date);
     setInvoiceNumber(tx.invoiceNumber);
-    setItems(tx.items.map(i => ({ ...i })));
+    setItems(tx.items.map(i => ({ ...i, discountPercent: i.discountPercent ?? 0 })));
     setDescription(tx.description || '');
     setNoGST(tx.noGST || false);
+    setDiscountPercent(tx.discountPercent ?? 0);
     setView('edit');
   };
 
@@ -446,7 +538,7 @@ const SalesPage = ({ mode = 'sales' }) => {
   if (view === 'create' || view === 'edit') {
     return (
       <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 4 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 4, gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 1.5 }}>
           <Button
             variant="outlined"
             onClick={() => setView('list')}
@@ -464,14 +556,34 @@ const SalesPage = ({ mode = 'sales' }) => {
           >
             Back
           </Button>
-          <Typography variant="h5" sx={{ fontWeight: 800 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>
             {view === 'edit' ? 'Edit ' : 'New '}
             {isSale ? 'Sales Invoice' : 'Purchase Bill'}
           </Typography>
         </Box>
 
+        {isSale && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: 'block', mb: 1 }}>Entry by</Typography>
+            <ToggleButtonGroup
+              value={entryMode}
+              exclusive
+              onChange={(e, v) => v != null && setEntryMode(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { textTransform: 'none', fontWeight: 600 } }}
+            >
+              <ToggleButton value="customer" aria-label="customer">
+                <Users size={16} style={{ marginRight: 6 }} /> Customer first
+              </ToggleButton>
+              <ToggleButton value="product" aria-label="product">
+                <Package size={16} style={{ marginRight: 6 }} /> Product first
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        )}
+
         <Grid container spacing={3} alignItems="flex-start">
-          <Grid item xs={12} md={8}>
+          <Grid item xs={12} md={8} sx={{ display: 'flex', flexDirection: 'column' }}>
             <Card
               elevation={0}
               sx={{ 
@@ -481,6 +593,7 @@ const SalesPage = ({ mode = 'sales' }) => {
                 borderRadius: 4,
                 overflow: 'hidden',
                 position: 'relative',
+                order: isSale && entryMode === 'product' ? 2 : 1,
                 '&::before': {
                   content: '""',
                   position: 'absolute',
@@ -556,7 +669,7 @@ const SalesPage = ({ mode = 'sales' }) => {
                 </Grid>
 
                 <Grid container spacing={2} sx={{ mt: 1 }}>
-                  <Grid item xs={12} sm={8}>
+                  <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
                       label="Description/Notes"
@@ -565,6 +678,19 @@ const SalesPage = ({ mode = 'sales' }) => {
                       onChange={e => setDescription(e.target.value)}
                       multiline
                       rows={2}
+                    />
+                  </Grid>
+                  <Grid item xs={6} sm={2}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Discount %"
+                      value={discountPercent}
+                      onChange={e => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                      inputProps={{ min: 0, max: 100, step: 0.5 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                      }}
                     />
                   </Grid>
                   <Grid
@@ -591,7 +717,7 @@ const SalesPage = ({ mode = 'sales' }) => {
 
             <Card
               elevation={0}
-              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden' }}
+              sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden', order: isSale && entryMode === 'product' ? 1 : 2 }}
             >
               <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', bgcolor: 'rgba(0,0,0,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'text.secondary' }}>
@@ -610,6 +736,9 @@ const SalesPage = ({ mode = 'sales' }) => {
                         </TableCell>
                         <TableCell width={120} align="right" sx={{ fontWeight: 700 }}>
                           Price
+                        </TableCell>
+                        <TableCell width={90} align="center" sx={{ fontWeight: 700 }}>
+                          Disc %
                         </TableCell>
                         <TableCell width={100} align="center" sx={{ fontWeight: 700 }}>
                           GST %
@@ -682,6 +811,22 @@ const SalesPage = ({ mode = 'sales' }) => {
                                 ),
                               }}
                               inputProps={{ style: { textAlign: 'right' } }}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <TextField
+                              type="number"
+                              size="small"
+                              variant="outlined"
+                              value={item.discountPercent ?? 0}
+                              onChange={e =>
+                                updateItemRow(
+                                  index,
+                                  'discountPercent',
+                                  Math.max(0, Math.min(100, parseFloat(e.target.value) || 0))
+                                )
+                              }
+                              inputProps={{ min: 0, max: 100, step: 0.5, style: { textAlign: 'center' } }}
                             />
                           </TableCell>
                           <TableCell align="center">
@@ -764,30 +909,26 @@ const SalesPage = ({ mode = 'sales' }) => {
                 </Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={6}>
-                    <Typography
-                      color="text.secondary"
-                      variant="body2"
-                    >
-                      Subtotal
-                    </Typography>
+                    <Typography color="text.secondary" variant="body2">Subtotal</Typography>
                   </Grid>
                   <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography variant="body2">
-                      ₹{calculateSubtotal().toFixed(2)}
-                    </Typography>
+                    <Typography variant="body2">₹{calculateSubtotal().toFixed(2)}</Typography>
                   </Grid>
+                  {(discountPercent > 0) && (
+                    <>
+                      <Grid item xs={6}>
+                        <Typography color="text.secondary" variant="body2">Discount ({discountPercent}%)</Typography>
+                      </Grid>
+                      <Grid item xs={6} sx={{ textAlign: 'right' }}>
+                        <Typography variant="body2">-₹{calculateDiscountAmount().toFixed(2)}</Typography>
+                      </Grid>
+                    </>
+                  )}
                   <Grid item xs={6}>
-                    <Typography
-                      color="text.secondary"
-                      variant="body2"
-                    >
-                      GST Total
-                    </Typography>
+                    <Typography color="text.secondary" variant="body2">GST Total</Typography>
                   </Grid>
                   <Grid item xs={6} sx={{ textAlign: 'right' }}>
-                    <Typography variant="body2">
-                      ₹{calculateTax().toFixed(2)}
-                    </Typography>
+                    <Typography variant="body2">₹{calculateTax().toFixed(2)}</Typography>
                   </Grid>
                 </Grid>
                 <Divider sx={{ my: 2.5 }} />
@@ -819,7 +960,7 @@ const SalesPage = ({ mode = 'sales' }) => {
                   fullWidth
                   size="large"
                   startIcon={<Save size={20} />}
-                  onClick={handleSave}
+                  onClick={() => handleSave()}
                   disabled={isSaving}
                   sx={{ 
                     borderRadius: 3, 
@@ -843,6 +984,32 @@ const SalesPage = ({ mode = 'sales' }) => {
                     ? 'Update Transaction'
                     : 'Save Transaction'}
                 </Button>
+                {view === 'create' && (
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    size="large"
+                    startIcon={<Plus size={20} />}
+                    onClick={() => handleSave({ saveAndCreateNew: true })}
+                    disabled={isSaving}
+                    sx={{ 
+                      mt: 1.5, 
+                      borderRadius: 3, 
+                      py: 1.8,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      fontSize: '1rem',
+                      borderColor: 'primary.main',
+                      color: 'primary.main',
+                      '&:hover': {
+                        borderColor: 'primary.dark',
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    Save and Create New
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -886,6 +1053,17 @@ const SalesPage = ({ mode = 'sales' }) => {
             <MenuItem value="Letter">Letter</MenuItem>
             <MenuItem value="Legal">Legal</MenuItem>
           </TextField>
+          {isSale && (
+            <Button
+              variant="outlined"
+              startIcon={<Printer size={20} />}
+              onClick={() => setBulkPrintOpen(true)}
+              size="large"
+              sx={{ borderRadius: 3 }}
+            >
+              Print bills by range
+            </Button>
+          )}
           <Button
             variant="contained"
             startIcon={
@@ -901,7 +1079,7 @@ const SalesPage = ({ mode = 'sales' }) => {
       </Box>
 
       {/* Filter Controls */}
-      <Card sx={{ mb: 3, borderRadius: 2 }}>
+      <Card sx={{ mb: 2, borderRadius: 1.5 }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Button
@@ -1170,6 +1348,73 @@ const SalesPage = ({ mode = 'sales' }) => {
         sx={{ borderTop: '1px solid', borderColor: 'divider' }}
       />
 
+      {/* Print bills by range dialog - Sales only */}
+      {isSale && (
+        <Dialog open={bulkPrintOpen} onClose={() => !isBulkPrinting && setBulkPrintOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Print bills by date range</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Select a date range. All bills in that range are grouped by customer. One print will include every customer&apos;s bills (each invoice on its own page).
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="From date"
+                  type="date"
+                  value={bulkPrintDateFrom}
+                  onChange={e => setBulkPrintDateFrom(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="To date"
+                  type="date"
+                  value={bulkPrintDateTo}
+                  onChange={e => setBulkPrintDateTo(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                  Customers with bills in range ({bulkPrintQueue.length})
+                </Typography>
+                {bulkPrintQueue.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">No bills in selected range.</Typography>
+                ) : (
+                  <List dense sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, maxHeight: 240, overflow: 'auto' }}>
+                    {bulkPrintQueue.map((group, idx) => (
+                      <ListItem key={group.partyId} divider={idx < bulkPrintQueue.length - 1}>
+                        <ListItemText
+                          primary={group.partyName || 'Unknown'}
+                          secondary={`${group.transactions.length} bill${group.transactions.length !== 1 ? 's' : ''}`}
+                          primaryTypographyProps={{ fontWeight: 600 }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setBulkPrintOpen(false)} disabled={isBulkPrinting}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<Printer size={18} />}
+              onClick={handleBulkPrintClick}
+              disabled={bulkPrintQueue.length === 0 || isBulkPrinting}
+            >
+              {isBulkPrinting ? 'Opening print...' : 'Print all'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
       <div style={{ display: 'none' }}>
         <InvoiceTemplate
           ref={printRef}
@@ -1178,6 +1423,27 @@ const SalesPage = ({ mode = 'sales' }) => {
           paperSize={paperSize}
         />
       </div>
+
+      {/* Bulk print: single document with all customers' bills (rendered when dialog open so content is ready) */}
+      {isSale && bulkPrintOpen && bulkPrintFlatList.length > 0 && (
+        <div style={{ position: 'absolute', left: -9999, top: 0, width: '100%' }} ref={bulkPrintRef}>
+          {bulkPrintFlatList.map((tx, i) => (
+            <div
+              key={tx.id}
+              style={{
+                pageBreakAfter: i < bulkPrintFlatList.length - 1 ? 'always' : 'auto',
+                pageBreakInside: 'avoid'
+              }}
+            >
+              <InvoiceTemplate
+                transaction={tx}
+                business={currentBusiness}
+                paperSize={paperSize}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </Box>
   );
 };
